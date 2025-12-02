@@ -283,69 +283,69 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`autonomous-operation`](skills/orchestration/autonomous-operation/SKILL.md) | Meta | Override token limits, work until goal achieved |
-| [`issue-driven-development`](skills/orchestration/issue-driven-development/SKILL.md) | Checklist | Master 13-step coding process |
-| [`session-start`](skills/orchestration/session-start/SKILL.md) | Protocol | Get bearings at session start |
+| [`autonomous-operation`](skills/autonomous-operation/SKILL.md) | Meta | Override token limits, work until goal achieved |
+| [`issue-driven-development`](skills/issue-driven-development/SKILL.md) | Checklist | Master 13-step coding process |
+| [`session-start`](skills/session-start/SKILL.md) | Protocol | Get bearings at session start |
 
 ### Issue & Project Management
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`issue-prerequisite`](skills/issue-management/issue-prerequisite/SKILL.md) | Gate | Ensure GitHub issue exists |
-| [`issue-decomposition`](skills/issue-management/issue-decomposition/SKILL.md) | Protocol | Break large issues into sub-issues |
-| [`issue-lifecycle`](skills/issue-management/issue-lifecycle/SKILL.md) | Discipline | Continuous issue updates |
-| [`project-status-sync`](skills/issue-management/project-status-sync/SKILL.md) | Protocol | Update GitHub Project fields |
-| [`acceptance-criteria-verification`](skills/issue-management/acceptance-criteria-verification/SKILL.md) | Protocol | Verify and report on criteria |
+| [`issue-prerequisite`](skills/issue-prerequisite/SKILL.md) | Gate | Ensure GitHub issue exists |
+| [`issue-decomposition`](skills/issue-decomposition/SKILL.md) | Protocol | Break large issues into sub-issues |
+| [`issue-lifecycle`](skills/issue-lifecycle/SKILL.md) | Discipline | Continuous issue updates |
+| [`project-status-sync`](skills/project-status-sync/SKILL.md) | Protocol | Update GitHub Project fields |
+| [`acceptance-criteria-verification`](skills/acceptance-criteria-verification/SKILL.md) | Protocol | Verify and report on criteria |
 
 ### Branch & Git
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`branch-discipline`](skills/branch-git/branch-discipline/SKILL.md) | Gate | Never work on main |
-| [`clean-commits`](skills/branch-git/clean-commits/SKILL.md) | Discipline | Atomic, descriptive commits |
+| [`branch-discipline`](skills/branch-discipline/SKILL.md) | Gate | Never work on main |
+| [`clean-commits`](skills/clean-commits/SKILL.md) | Discipline | Atomic, descriptive commits |
 
 ### Research & Memory
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`research-after-failure`](skills/research-memory/research-after-failure/SKILL.md) | Protocol | Research after 2 failures |
-| [`pre-work-research`](skills/research-memory/pre-work-research/SKILL.md) | Protocol | Research before coding |
-| [`memory-integration`](skills/research-memory/memory-integration/SKILL.md) | Protocol | Use episodic + knowledge graph |
+| [`research-after-failure`](skills/research-after-failure/SKILL.md) | Protocol | Research after 2 failures |
+| [`pre-work-research`](skills/pre-work-research/SKILL.md) | Protocol | Research before coding |
+| [`memory-integration`](skills/memory-integration/SKILL.md) | Protocol | Use episodic + knowledge graph |
 
 ### Development Standards
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`strict-typing`](skills/development-standards/strict-typing/SKILL.md) | Standard | No `any` types |
-| [`style-guide-adherence`](skills/development-standards/style-guide-adherence/SKILL.md) | Standard | Google style guides |
-| [`inline-documentation`](skills/development-standards/inline-documentation/SKILL.md) | Standard | Complete JSDoc/docstrings |
-| [`inclusive-language`](skills/development-standards/inclusive-language/SKILL.md) | Standard | Respectful terminology |
-| [`tdd-full-coverage`](skills/development-standards/tdd-full-coverage/SKILL.md) | Protocol | TDD with full coverage |
-| [`no-deferred-work`](skills/development-standards/no-deferred-work/SKILL.md) | Discipline | No TODOs |
+| [`strict-typing`](skills/strict-typing/SKILL.md) | Standard | No `any` types |
+| [`style-guide-adherence`](skills/style-guide-adherence/SKILL.md) | Standard | Google style guides |
+| [`inline-documentation`](skills/inline-documentation/SKILL.md) | Standard | Complete JSDoc/docstrings |
+| [`inclusive-language`](skills/inclusive-language/SKILL.md) | Standard | Respectful terminology |
+| [`tdd-full-coverage`](skills/tdd-full-coverage/SKILL.md) | Protocol | TDD with full coverage |
+| [`no-deferred-work`](skills/no-deferred-work/SKILL.md) | Discipline | No TODOs |
 
 ### Code Review
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`comprehensive-review`](skills/code-review/comprehensive-review/SKILL.md) | Checklist | 7-criteria review |
-| [`review-scope`](skills/code-review/review-scope/SKILL.md) | Decision | Minor vs major scope |
-| [`apply-all-findings`](skills/code-review/apply-all-findings/SKILL.md) | Discipline | Implement all recommendations |
+| [`comprehensive-review`](skills/comprehensive-review/SKILL.md) | Checklist | 7-criteria review |
+| [`review-scope`](skills/review-scope/SKILL.md) | Decision | Minor vs major scope |
+| [`apply-all-findings`](skills/apply-all-findings/SKILL.md) | Discipline | Implement all recommendations |
 
 ### PR & CI
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`pr-creation`](skills/pr-ci/pr-creation/SKILL.md) | Protocol | Complete PR documentation |
-| [`ci-monitoring`](skills/pr-ci/ci-monitoring/SKILL.md) | Protocol | Monitor and fix CI |
-| [`verification-before-merge`](skills/pr-ci/verification-before-merge/SKILL.md) | Gate | All checks before merge |
+| [`pr-creation`](skills/pr-creation/SKILL.md) | Protocol | Complete PR documentation |
+| [`ci-monitoring`](skills/ci-monitoring/SKILL.md) | Protocol | Monitor and fix CI |
+| [`verification-before-merge`](skills/verification-before-merge/SKILL.md) | Gate | All checks before merge |
 
 ### Recovery & Environment
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| [`error-recovery`](skills/recovery-environment/error-recovery/SKILL.md) | Protocol | Graceful failure handling |
-| [`environment-bootstrap`](skills/recovery-environment/environment-bootstrap/SKILL.md) | Protocol | Dev environment setup |
-| [`conflict-resolution`](skills/recovery-environment/conflict-resolution/SKILL.md) | Protocol | Merge conflict handling |
+| [`error-recovery`](skills/error-recovery/SKILL.md) | Protocol | Graceful failure handling |
+| [`environment-bootstrap`](skills/environment-bootstrap/SKILL.md) | Protocol | Dev environment setup |
+| [`conflict-resolution`](skills/conflict-resolution/SKILL.md) | Protocol | Merge conflict handling |
 
 ---
 

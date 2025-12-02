@@ -162,14 +162,16 @@ op account list
 
 ```bash
 # Required: Your GitHub Project URL
-# For user-owned projects:
-export GITHUB_PROJECT="https://github.com/users/YOUR_USERNAME/projects/N"
-# For org-owned projects:
-export GITHUB_PROJECT="https://github.com/orgs/YOUR_ORG/projects/N"
+# User project:  https://github.com/users/USERNAME/projects/N
+# Org project:   https://github.com/orgs/ORGNAME/projects/N
+GITHUB_PROJECT="https://github.com/users/troykelly/projects/4"
 
 # These can be derived from git remote, but explicit is better
-export GITHUB_OWNER="your-username-or-org"
-export GITHUB_REPO="your-repo"
+GITHUB_OWNER="troykelly"
+GITHUB_REPO="homeassistant-zowietek"
+
+# Project number from URL
+GITHUB_PROJECT_NUM=4
 ```
 
 ### 3. Configure GitHub Project
@@ -177,20 +179,14 @@ export GITHUB_REPO="your-repo"
 Your project needs these custom fields. Create them via GitHub UI or CLI:
 
 ```bash
-# Set your project number (from the URL) and owner
-PROJECT_NUM=4
-# Use "@me" for personal projects, or org name for org projects
-PROJECT_OWNER="@me"           # Personal project
-# PROJECT_OWNER="my-org"      # Organization project
-
 # Add required fields (run once per project)
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Verification" --data-type "SINGLE_SELECT" --single-select-options "Not Verified,Failing,Partial,Passing"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Priority" --data-type "SINGLE_SELECT" --single-select-options "Critical,High,Medium,Low"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Type" --data-type "SINGLE_SELECT" --single-select-options "Feature,Bug,Chore,Research,Spike"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Criteria Met" --data-type "NUMBER"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Criteria Total" --data-type "NUMBER"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Last Verified" --data-type "DATE"
-gh project field-create $PROJECT_NUM --owner "$PROJECT_OWNER" --name "Verified By" --data-type "TEXT"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Verification" --data-type "SINGLE_SELECT" --single-select-options "Not Verified,Failing,Partial,Passing"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Priority" --data-type "SINGLE_SELECT" --single-select-options "Critical,High,Medium,Low"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Type" --data-type "SINGLE_SELECT" --single-select-options "Feature,Bug,Chore,Research,Spike"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Criteria Met" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Criteria Total" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Last Verified" --data-type "DATE"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Verified By" --data-type "TEXT"
 ```
 
 ### 4. Create Required Labels
@@ -225,14 +221,10 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
-| `GITHUB_PROJECT` | `https://github.com/users/troykelly/projects/4` | Target project for tracking |
-
-### Derived Variables (Optional Override)
-
-| Variable | Default Source | Purpose |
-|----------|----------------|---------|
-| `GITHUB_OWNER` | Parsed from `GITHUB_PROJECT` or git remote | Repository owner |
-| `GITHUB_REPO` | Current git remote | Repository name |
+| `GITHUB_PROJECT` | `https://github.com/users/troykelly/projects/4` | Target project URL |
+| `GITHUB_OWNER` | `troykelly` | Repository/project owner (user or org) |
+| `GITHUB_REPO` | `homeassistant-zowietek` | Repository name |
+| `GITHUB_PROJECT_NUM` | `4` | Project number from URL |
 
 ### Required MCP Servers
 

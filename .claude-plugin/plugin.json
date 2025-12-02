@@ -1,0 +1,24 @@
+{
+  "name": "issue-driven-development",
+  "version": "1.0.0",
+  "description": "Opinionated GitHub-native development workflow with 28 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
+  "author": {
+    "name": "Troy Kelly",
+    "url": "https://github.com/troykelly"
+  },
+  "homepage": "https://github.com/troykelly/claude-skills",
+  "repository": "https://github.com/troykelly/claude-skills.git",
+  "license": "MIT",
+  "keywords": [
+    "development",
+    "tdd",
+    "github",
+    "issue-tracking",
+    "code-review",
+    "autonomous",
+    "workflow"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

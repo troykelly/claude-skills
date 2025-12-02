@@ -362,6 +362,15 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 |-------|------|-------------|
 | [`pexels-media`](skills/pexels-media/SKILL.md) | Protocol | Source images/videos from Pexels with mandatory sidecar metadata |
 
+### Work Planning & Architecture
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`work-intake`](skills/work-intake/SKILL.md) | Entry Point | Triage all requests from trivial to massive, route to appropriate workflow |
+| [`initiative-architecture`](skills/initiative-architecture/SKILL.md) | Protocol | Multi-epic planning with research spikes, decision logs, and resumable context |
+| [`epic-management`](skills/epic-management/SKILL.md) | Protocol | Feature-level issue grouping with epic labels and tracking issues |
+| [`milestone-management`](skills/milestone-management/SKILL.md) | Protocol | Time-based issue grouping for delivery phases and releases |
+
 ---
 
 ## The Coding Process (13 Steps)

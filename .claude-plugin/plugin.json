@@ -1,7 +1,7 @@
 {
   "name": "issue-driven-development",
   "version": "1.0.0",
-  "description": "Opinionated GitHub-native development workflow with 29 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
+  "description": "Opinionated GitHub-native development workflow with 33 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking. Includes work planning from trivial tasks to massive initiatives.",
   "author": {
     "name": "Troy Kelly",
     "email": "troy@troykelly.com",
@@ -17,7 +17,11 @@
     "issue-tracking",
     "code-review",
     "autonomous",
-    "workflow"
+    "workflow",
+    "epic",
+    "milestone",
+    "initiative",
+    "work-planning"
   ],
   "mcpServers": "./.mcp.json"
 }

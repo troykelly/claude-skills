@@ -179,14 +179,19 @@ GITHUB_PROJECT_NUM=4
 Your project needs these custom fields. Create them via GitHub UI or CLI:
 
 ```bash
+# Set project owner for gh commands:
+# - User projects: must use "@me"
+# - Org projects: use the org name (e.g., "my-org")
+GH_PROJECT_OWNER="@me"
+
 # Add required fields (run once per project)
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Verification" --data-type "SINGLE_SELECT" --single-select-options "Not Verified,Failing,Partial,Passing"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Priority" --data-type "SINGLE_SELECT" --single-select-options "Critical,High,Medium,Low"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Type" --data-type "SINGLE_SELECT" --single-select-options "Feature,Bug,Chore,Research,Spike"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Criteria Met" --data-type "NUMBER"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Criteria Total" --data-type "NUMBER"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Last Verified" --data-type "DATE"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GITHUB_OWNER" --name "Verified By" --data-type "TEXT"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Verification" --data-type "SINGLE_SELECT" --single-select-options "Not Verified,Failing,Partial,Passing"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Priority" --data-type "SINGLE_SELECT" --single-select-options "Critical,High,Medium,Low"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Type" --data-type "SINGLE_SELECT" --single-select-options "Feature,Bug,Chore,Research,Spike"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Met" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Total" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Last Verified" --data-type "DATE"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Verified By" --data-type "TEXT"
 ```
 
 ### 4. Create Required Labels

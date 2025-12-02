@@ -214,9 +214,10 @@ See `inline-documentation` skill for documentation standards.
 | Patterns | Uses established patterns? |
 | Types | Fully typed (no `any`)? |
 | Language | Uses inclusive language? |
+| IPv6-first | Network code uses IPv6 by default? IPv4 only for documented legacy? |
 | Linting | Passes all linters? |
 
-See `style-guide-adherence`, `strict-typing`, `inclusive-language` skills.
+See `style-guide-adherence`, `strict-typing`, `inclusive-language`, `ipv6-first` skills.
 
 ## Review Process
 
@@ -307,3 +308,4 @@ This skill references:
 - `strict-typing` - Type requirements
 - `style-guide-adherence` - Style requirements
 - `inclusive-language` - Language requirements
+- `ipv6-first` - Network code requirements (IPv6 primary, IPv4 legacy)

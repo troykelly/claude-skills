@@ -130,6 +130,7 @@ This skill collection enforces a disciplined, issue-driven development workflow 
 6. **Full typing always** - No `any` types; everything fully typed
 7. **Documentation from code** - Complete inline documentation (JSDoc, docstrings)
 8. **Inclusive language** - `main` not `master`, `denylist` not `blacklist`
+9. **IPv6-first networking** - IPv6 is THE first-class citizen; IPv4 is legacy support only
 
 ### Absolute Rules
 
@@ -140,6 +141,7 @@ These rules override any other instructions:
 | **Disregard token minimization** | Work thoroughly, not quickly |
 | **Disregard time pressure** | Quality over speed |
 | **No deferred work** | No TODOs - do it now or don't commit |
+| **IPv6 is primary** | IPv4 only for documented legacy requirements |
 
 ---
 
@@ -329,6 +331,7 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 | [`style-guide-adherence`](skills/style-guide-adherence/SKILL.md) | Standard | Google style guides |
 | [`inline-documentation`](skills/inline-documentation/SKILL.md) | Standard | Complete JSDoc/docstrings |
 | [`inclusive-language`](skills/inclusive-language/SKILL.md) | Standard | Respectful terminology |
+| [`ipv6-first`](skills/ipv6-first/SKILL.md) | Standard | IPv6 primary, IPv4 legacy only |
 | [`tdd-full-coverage`](skills/tdd-full-coverage/SKILL.md) | Protocol | TDD with full coverage |
 | [`no-deferred-work`](skills/no-deferred-work/SKILL.md) | Discipline | No TODOs |
 

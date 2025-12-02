@@ -128,9 +128,11 @@ if [ "${START_DEV_SERVER:-false}" = "true" ]; then
     # Wait for server to be ready
     sleep 5
 
-    # Smoke test
-    if curl -sf http://localhost:3000/health > /dev/null; then
-        echo -e "${GREEN}✓${NC} Development server running (PID: $DEV_PID)"
+    # Smoke test (IPv6-first: try [::1] before falling back to 127.0.0.1)
+    if curl -sf http://[::1]:3000/health > /dev/null; then
+        echo -e "${GREEN}✓${NC} Development server running on IPv6 (PID: $DEV_PID)"
+    elif curl -sf http://127.0.0.1:3000/health > /dev/null; then
+        echo -e "${YELLOW}!${NC} Development server running on IPv4 legacy (PID: $DEV_PID)"
     else
         echo -e "${RED}✗${NC} Development server not responding"
         kill $DEV_PID 2>/dev/null
@@ -185,7 +187,7 @@ After environment setup, verify basic functionality:
 | Build | `npm run build` | No errors |
 | Tests | `npm test` | All pass |
 | Dev server | `npm run dev` | Server starts |
-| Health check | `curl localhost:3000/health` | 200 OK |
+| Health check | `curl http://[::1]:3000/health` | 200 OK (IPv6-first) |
 | Basic flow | Run E2E test | Passes |
 
 ### Smoke Test Script
@@ -203,8 +205,12 @@ npm run dev &
 DEV_PID=$!
 sleep 10
 
-# Health check
-if ! curl -sf http://localhost:3000/health; then
+# Health check (IPv6-first, fallback to IPv4 legacy)
+if curl -sf http://[::1]:3000/health > /dev/null; then
+    echo "Health check passed (IPv6)"
+elif curl -sf http://127.0.0.1:3000/health > /dev/null; then
+    echo "Health check passed (IPv4 legacy)"
+else
     echo "Health check failed"
     kill $DEV_PID
     exit 1

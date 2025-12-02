@@ -1,43 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.schema.json",
-  "name": "issue-driven-development",
-  "displayName": "Issue-Driven Development",
-  "version": "1.0.0",
-  "description": "Opinionated GitHub-native development workflow with 28 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
-  "publisher": "troykelly",
-  "repository": "https://github.com/troykelly/claude-skills",
-  "homepage": "https://github.com/troykelly/claude-skills",
-  "license": "MIT",
-  "categories": [
-    "development",
-    "workflow",
-    "code-review",
-    "testing"
-  ],
-  "keywords": [
-    "tdd",
-    "github",
-    "issue-tracking",
-    "code-review",
-    "autonomous",
-    "workflow",
-    "strict-typing",
-    "documentation"
-  ],
-  "engines": {
-    "claude-code": ">=1.0.0"
-  },
-  "platform": {
-    "os": ["darwin", "linux", "win32"],
-    "arch": ["x64", "arm64"]
-  },
-  "requirements": {
-    "cli": ["git", "gh"],
-    "optional_cli": ["node", "npm", "npx", "uvx"],
-    "env": ["GITHUB_PROJECT"],
-    "optional_env": ["GITHUB_TOKEN", "GITHUB_OWNER", "GITHUB_REPO"]
-  },
-  "icon": "icon.png",
-  "screenshots": [],
-  "changelog": "CHANGELOG.md"
+  "owner": "troykelly",
+  "plugins": [
+    {
+      "name": "issue-driven-development",
+      "version": "1.0.0",
+      "description": "Opinionated GitHub-native development workflow with 28 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
+      "path": "."
+    }
+  ]
 }

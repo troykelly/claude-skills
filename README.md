@@ -4,10 +4,45 @@ An opinionated skill collection for autonomous, GitHub-native software developme
 
 ## Installation
 
-### Option 1: Clone and Add to User Settings (Recommended)
+### Option 1: Add Marketplace (Recommended)
+
+In Claude Code, run:
+
+```
+/plugin marketplace add troykelly/claude-skills
+```
+
+Then enable the plugin:
+
+```
+/plugin install issue-driven-development
+```
+
+### Option 2: Manual Settings Configuration
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "troykelly-skills": {
+      "source": {
+        "source": "github",
+        "repo": "troykelly/claude-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "issue-driven-development@troykelly-skills": true
+  }
+}
+```
+
+### Option 3: Local Development
+
+Clone and register locally:
 
 ```bash
-# Clone the repository
 git clone https://github.com/troykelly/claude-skills.git ~/.claude-plugins/claude-skills
 ```
 
@@ -20,46 +55,6 @@ Add to `~/.claude/settings.json`:
       "source": {
         "source": "directory",
         "path": "~/.claude-plugins/claude-skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "issue-driven-development@troykelly-skills": true
-  }
-}
-```
-
-### Option 2: GitHub Source (No Clone Required)
-
-Add directly to `~/.claude/settings.json`:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "troykelly-skills": {
-      "source": {
-        "source": "github",
-        "repo": "troykelly/claude-skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "issue-driven-development@troykelly-skills": true
-  }
-}
-```
-
-### Option 3: Project-Specific
-
-For project-specific use, add to your project's `.claude/settings.json`:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "troykelly-skills": {
-      "source": {
-        "source": "github",
-        "repo": "troykelly/claude-skills"
       }
     }
   },

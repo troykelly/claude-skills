@@ -12,11 +12,19 @@ In Claude Code, run:
 /plugin marketplace add troykelly/claude-skills
 ```
 
-Then enable the plugin:
+Then install the plugin:
 
 ```
-/plugin install issue-driven-development
+/plugin install issue-driven-development@troykelly-skills
 ```
+
+Or use the interactive browser:
+
+```
+/plugin
+```
+
+Select "Browse Plugins" to view and install.
 
 ### Option 2: Manual Settings Configuration
 

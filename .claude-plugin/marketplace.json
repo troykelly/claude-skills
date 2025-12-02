@@ -1,12 +1,18 @@
 {
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.schema.json",
-  "owner": "troykelly",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "troykelly-skills",
+  "owner": {
+    "name": "Troy Kelly",
+    "email": "troy@troykelly.com"
+  },
   "plugins": [
     {
       "name": "issue-driven-development",
-      "version": "1.0.0",
       "description": "Opinionated GitHub-native development workflow with 28 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
-      "path": "."
+      "source": "./",
+      "version": "1.0.0",
+      "category": "development",
+      "tags": ["tdd", "github", "issue-tracking", "code-review", "autonomous", "workflow"]
     }
   ]
 }

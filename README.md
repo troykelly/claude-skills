@@ -374,6 +374,16 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 | [`epic-management`](skills/epic-management/SKILL.md) | Protocol | Feature-level issue grouping with epic labels and tracking issues |
 | [`milestone-management`](skills/milestone-management/SKILL.md) | Protocol | Time-based issue grouping for delivery phases and releases |
 
+### Autonomous Orchestration
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`autonomous-orchestration`](skills/autonomous-orchestration/SKILL.md) | Controller | Long-running autonomous work across multiple issues with parallel workers |
+| [`worker-dispatch`](skills/worker-dispatch/SKILL.md) | Protocol | Spawn isolated worker processes in git worktrees |
+| [`worker-protocol`](skills/worker-protocol/SKILL.md) | Contract | Behavioral protocol for spawned worker agents |
+| [`worker-handover`](skills/worker-handover/SKILL.md) | Protocol | Context transfer when workers hit turn limits |
+| [`ci-monitor`](skills/ci-monitor/SKILL.md) | Protocol | CI monitoring with SLEEP/WAKE via polling, hooks, and webhooks |
+
 ---
 
 ## The Coding Process (13 Steps)

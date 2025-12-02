@@ -8,11 +8,11 @@
   "plugins": [
     {
       "name": "issue-driven-development",
-      "description": "Opinionated GitHub-native development workflow with 34 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, IPv6-first networking, comprehensive code review, and continuous issue tracking. Includes work planning from trivial tasks to massive initiatives.",
+      "description": "Opinionated GitHub-native development workflow with 39 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, IPv6-first networking, comprehensive code review, and continuous issue tracking. Includes work planning and autonomous orchestration with parallel workers.",
       "source": "./",
       "version": "1.0.0",
       "category": "development",
-      "tags": ["tdd", "github", "issue-tracking", "code-review", "autonomous", "workflow", "epic", "milestone", "initiative", "work-planning"]
+      "tags": ["tdd", "github", "issue-tracking", "code-review", "autonomous", "workflow", "epic", "milestone", "initiative", "work-planning", "orchestration", "parallel-workers", "ci-monitoring"]
     }
   ]
 }

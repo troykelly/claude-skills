@@ -4,40 +4,51 @@ An opinionated skill collection for autonomous, GitHub-native software developme
 
 ## Installation
 
-### Option 1: GitHub Install (Recommended)
+### Option 1: Clone and Add to User Settings (Recommended)
 
 ```bash
-/plugin install github:troykelly/claude-skills
+# Clone the repository
+git clone https://github.com/troykelly/claude-skills.git ~/.claude-plugins/claude-skills
+
+# Add to your user settings (~/.claude/settings.json)
 ```
 
-This fetches the plugin directly from GitHub and installs it.
-
-### Option 2: Add to Project Settings
-
-Add to your project's `.claude/settings.json`:
+Add to `~/.claude/settings.json`:
 
 ```json
 {
   "plugins": [
-    { "source": "github", "repo": "troykelly/claude-skills" }
+    { "source": "local", "path": "~/.claude-plugins/claude-skills" }
   ]
 }
 ```
 
-### Option 3: Local Development
+### Option 2: Add to Project Settings
 
-Clone and add locally:
-
-```bash
-git clone https://github.com/troykelly/claude-skills.git
-```
-
-Add to `.claude/settings.json`:
+For project-specific use, add to your project's `.claude/settings.json`:
 
 ```json
 {
   "plugins": [
-    { "path": "/path/to/claude-skills" }
+    { "source": "local", "path": "/path/to/claude-skills" }
+  ]
+}
+```
+
+### Option 3: Git Submodule
+
+Add as a submodule in your project:
+
+```bash
+git submodule add https://github.com/troykelly/claude-skills.git .claude-plugins/issue-driven-development
+```
+
+Then in `.claude/settings.json`:
+
+```json
+{
+  "plugins": [
+    { "source": "local", "path": ".claude-plugins/issue-driven-development" }
   ]
 }
 ```

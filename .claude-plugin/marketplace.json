@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "issue-driven-development",
-      "description": "Opinionated GitHub-native development workflow with 28 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
+      "description": "Opinionated GitHub-native development workflow with 29 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, comprehensive code review, and continuous issue tracking.",
       "source": "./",
       "version": "1.0.0",
       "category": "development",

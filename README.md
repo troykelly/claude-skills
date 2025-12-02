@@ -231,6 +231,12 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 | `GITHUB_REPO` | `homeassistant-zowietek` | Repository name |
 | `GITHUB_PROJECT_NUM` | `4` | Project number from URL |
 
+### Optional Environment Variables
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `PEXELS_API_KEY` | `abc123...` | Pexels API key for media sourcing (required for `pexels-media` skill) |
+
 ### Required MCP Servers
 
 | Server | Purpose | Critical Functions |
@@ -349,6 +355,12 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 | [`error-recovery`](skills/error-recovery/SKILL.md) | Protocol | Graceful failure handling |
 | [`environment-bootstrap`](skills/environment-bootstrap/SKILL.md) | Protocol | Dev environment setup |
 | [`conflict-resolution`](skills/conflict-resolution/SKILL.md) | Protocol | Merge conflict handling |
+
+### Media & Assets
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`pexels-media`](skills/pexels-media/SKILL.md) | Protocol | Source images/videos from Pexels with mandatory sidecar metadata |
 
 ---
 

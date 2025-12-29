@@ -1,31 +1,27 @@
 {
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/mcp.schema.json",
-  "_comment": "Recommended MCP servers for issue-driven-development. Install these separately if not already available.",
-
-  "git": {
-    "command": "uvx",
-    "args": ["mcp-server-git", "--repository", "."],
-    "description": "Git operations for branch management and commits"
-  },
-
-  "memory": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-memory"],
-    "description": "Knowledge graph for cross-session memory"
-  },
-
-  "github": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "env": {
-      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+  "mcpServers": {
+    "git": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "."]
     },
-    "description": "GitHub API for issues, PRs, and projects"
-  },
-
-  "playwright": {
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-playwright"],
-    "description": "Browser automation for E2E verification"
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-playwright"]
+    }
   }
 }

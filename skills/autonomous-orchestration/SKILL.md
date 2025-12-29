@@ -1,6 +1,6 @@
 ---
 name: autonomous-orchestration
-description: Use when user confirms autonomous operation across multiple issues. Orchestrates parallel workers, monitors progress, handles SLEEP/WAKE cycles, and works until scope is complete.
+description: Use when user requests autonomous operation across multiple issues. Orchestrates parallel workers, monitors progress, handles SLEEP/WAKE cycles, and works until scope is complete without user intervention.
 ---
 
 # Autonomous Orchestration
@@ -11,7 +11,7 @@ Orchestrates long-running autonomous work across multiple issues, spawning paral
 
 **Core principle:** GitHub is the source of truth. Workers are disposable. State survives restarts.
 
-**Announce at start:** "I'm using autonomous-orchestration to work through [SCOPE]. This requires your explicit confirmation for autonomous operation."
+**Announce at start:** "I'm using autonomous-orchestration to work through [SCOPE]. Starting autonomous operation now."
 
 ## Prerequisites
 
@@ -21,31 +21,118 @@ Orchestrates long-running autonomous work across multiple issues, spawning paral
 - Git worktrees support (workers use isolated worktrees)
 - GitHub CLI (`gh`) authenticated
 
-## User Confirmation Required
+## Immediate Start (User Consent Implied)
 
-**CRITICAL:** Never begin autonomous operation without explicit user confirmation.
+**The user's request for autonomous operation IS their consent.** No additional confirmation is required.
+
+When the user requests autonomous work:
+1. **Identify scope** - Parse user request for milestone, epic, specific issues, or "all"
+2. **Announce intent** - Briefly state what you're about to do
+3. **Start immediately** - Begin orchestration without waiting for additional input
 
 ```markdown
-## Autonomous Operation Request
+## Starting Autonomous Operation
 
-⚠️ **Extended autonomous operation requires your explicit approval.**
+**Scope:** [MILESTONE/EPIC/ISSUES or "all open issues"]
+**Workers:** Up to 5 parallel
+**Mode:** Continuous until complete
 
-**Scope:** [MILESTONE/EPIC/ISSUES]
-**Estimated workers:** [N]
-**Parallel limit:** 5 workers max
-
-This will:
-1. Spawn worker processes for each issue
-2. Create git worktrees for isolation
-3. Workers implement, test, and create PRs
-4. Monitor CI and auto-merge when green
-5. SLEEP while waiting, WAKE when ready
-6. Continue until all issues resolved (or blocked)
-
-**Type PROCEED to confirm autonomous operation.**
+Beginning work now...
 ```
 
-Only proceed when user types exactly: `PROCEED`
+**Do NOT ask for "PROCEED" or any confirmation.** The user asked for autonomous operation - that is the confirmation.
+
+## Automatic Scope Detection
+
+When the user requests autonomous operation without specifying a scope:
+
+### Priority Order
+
+1. **User-specified scope** - If user mentions specific issues, epics, or milestones, use those
+2. **Urgent/High Priority standalone issues** - Issues with `priority:urgent` or `priority:high` labels that are NOT part of an epic
+3. **Epic-based sequential work** - Work through epics in order, completing all issues within each epic before moving to the next
+4. **Remaining standalone issues** - Any issues not part of an epic
+
+### Scope Detection Logic
+
+```bash
+detect_work_scope() {
+  # 1. Check for urgent/high priority standalone issues first
+  PRIORITY_ISSUES=$(gh issue list --state open \
+    --label "priority:urgent,priority:high" \
+    --json number,labels \
+    --jq '[.[] | select(.labels | map(.name) | any(startswith("epic-")) | not)] | .[].number')
+
+  if [ -n "$PRIORITY_ISSUES" ]; then
+    echo "priority_standalone"
+    echo "$PRIORITY_ISSUES"
+    return
+  fi
+
+  # 2. Get epics in order (by creation date or specified priority)
+  EPICS=$(gh issue list --state open --label "type:epic" \
+    --json number,title,createdAt \
+    --jq 'sort_by(.createdAt) | .[].number')
+
+  if [ -n "$EPICS" ]; then
+    echo "epics"
+    echo "$EPICS"
+    return
+  fi
+
+  # 3. Fall back to all open issues
+  ALL_ISSUES=$(gh issue list --state open --json number --jq '.[].number')
+  echo "all_issues"
+  echo "$ALL_ISSUES"
+}
+```
+
+### Working Through Epics
+
+When working through epics sequentially:
+
+1. **Select first incomplete epic** - Find the epic with the earliest creation date that still has open child issues
+2. **Get all epic issues** - Query for issues with that epic's label
+3. **Work until epic complete** - All issues in the epic are closed
+4. **Move to next epic** - Repeat until all epics are complete
+5. **Then standalone issues** - Finally address any non-epic issues
+
+```bash
+get_next_epic_scope() {
+  # Find first epic with open issues
+  for epic_num in $(gh issue list --state open --label "type:epic" \
+    --json number,createdAt --jq 'sort_by(.createdAt) | .[].number'); do
+
+    # Get epic label
+    EPIC_LABEL=$(gh issue view "$epic_num" --json labels \
+      --jq '.labels[] | select(.name | startswith("epic-")) | .name')
+
+    # Check if epic has open issues
+    OPEN_COUNT=$(gh issue list --state open --label "$EPIC_LABEL" \
+      --json number --jq 'length')
+
+    if [ "$OPEN_COUNT" -gt 0 ]; then
+      echo "$EPIC_LABEL"
+      return
+    fi
+  done
+
+  echo ""  # No epics with open issues
+}
+```
+
+## Continuous Operation Until Complete
+
+Autonomous operation continues until ALL of:
+- No open issues remain in scope
+- No open PRs awaiting merge
+- No issues in "In Progress" or "In Review" status
+
+The operation does NOT pause for:
+- Progress updates
+- Confirmation between issues
+- Switching between epics
+- Any user input (unless blocked by a fatal error)
 
 ## State Management (Project Board is THE Source of Truth)
 
@@ -537,20 +624,19 @@ ISSUES="123 124 125 126"
 
 ### Unbounded (All Open Issues)
 
+When user requests autonomous work without specifying scope, or explicitly asks to work on "everything" or "all issues":
+
 ```markdown
-⚠️ **UNBOUNDED MODE WARNING**
+## Starting Unbounded Autonomous Operation
 
-You have requested unbounded orchestration (work until no open issues).
+**Scope:** All open issues in repository
+**Workers:** Up to 5 parallel
+**Mode:** Continuous until all issues resolved or blocked
 
-This will:
-- Work through ALL open issues in the repository
-- Continue indefinitely until complete
-- Only stop when no issues remain or all are blocked
-
-**This is potentially dangerous.** Are you sure?
-
-Type UNBOUNDED to confirm, or specify a scope instead.
+Beginning with priority/urgent issues, then working through epics sequentially...
 ```
+
+**Do NOT ask for "UNBOUNDED" confirmation.** The user's request is their consent.
 
 ```bash
 # All open issues
@@ -916,7 +1002,8 @@ Issue will be re-queued for another attempt."
 
 Before starting orchestration:
 
-- [ ] User typed PROCEED (or UNBOUNDED for unbounded mode)
+- [ ] User requested autonomous operation (no additional confirmation needed)
+- [ ] Scope identified (explicit from user, or defaulting to priority/urgent then epics)
 - [ ] Scope validated (issues exist and are actionable)
 - [ ] Git worktrees available (`git worktree list`)
 - [ ] GitHub CLI authenticated (`gh auth status`)

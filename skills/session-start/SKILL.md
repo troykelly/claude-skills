@@ -93,22 +93,99 @@ git stash list
 
 ---
 
-### Step 3: GitHub Project State
+### Step 3: GitHub Project State (Source of Truth)
 
-Check the current state of work in the GitHub Project.
+Check the current state of work via the **GitHub Project Board** (the source of truth).
 
 ```bash
-# Get project items (requires GITHUB_PROJECT to be set)
-gh project item-list [PROJECT_NUMBER] --owner @me --format json
+# Verify project is accessible
+gh project view "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json
 
-# Or check specific issue if provided
-gh issue view [ISSUE_NUMBER] --json state,title,labels,projectItems
+# Get all project items with their status
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json | \
+  jq '.items[] | {number: .content.number, title: .content.title, status: .status.name}'
 ```
 
 **Key questions:**
-- What issues are "In Progress"?
-- Are there any blocked items?
-- What's the next priority item?
+- What issues have Status = "In Progress"?
+- What issues have Status = "Ready" (pending work)?
+- Are there any Status = "Blocked" items?
+- What's the highest priority Ready item?
+
+**Query by status:**
+
+```bash
+# Get Ready issues (work available)
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r '.items[] | select(.status.name == "Ready") | .content.number'
+
+# Get In Progress issues
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
+
+# Get Blocked issues
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
+```
+
+---
+
+### Step 3.5: Project Board Sync Verification
+
+**MANDATORY:** Verify project board state matches actual work state.
+
+```bash
+# Check for sync issues between project board and reality
+
+echo "## Project Board Sync Check"
+echo ""
+
+# 1. Issues marked "In Progress" should have active branches
+echo "### Checking: In Progress issues have branches"
+for issue in $(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'); do
+
+  branch=$(git branch -r 2>/dev/null | grep -E "feature/$issue-" | head -1)
+  if [ -z "$branch" ]; then
+    echo "⚠️ Issue #$issue is 'In Progress' but has no branch"
+  fi
+done
+
+# 2. Active branches should have issues marked "In Progress"
+echo ""
+echo "### Checking: Active branches have In Progress issues"
+for branch in $(git branch -r 2>/dev/null | grep -E 'origin/feature/[0-9]+' | sed 's/.*feature\///' | cut -d- -f1 | sort -u); do
+  status=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r ".items[] | select(.content.number == $branch) | .status.name")
+
+  if [ "$status" != "In Progress" ] && [ "$status" != "In Review" ]; then
+    echo "⚠️ Branch for #$branch exists but project Status='$status' (expected: In Progress or In Review)"
+  fi
+done
+
+# 3. Open PRs should have issues marked "In Review"
+echo ""
+echo "### Checking: Open PRs have In Review issues"
+for pr in $(gh pr list --json number,body --jq '.[] | select(.body | contains("Closes #")) | .body' 2>/dev/null | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+'); do
+  status=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r ".items[] | select(.content.number == $pr) | .status.name")
+
+  if [ "$status" != "In Review" ]; then
+    echo "⚠️ Issue #$pr has open PR but project Status='$status' (expected: In Review)"
+  fi
+done
+
+echo ""
+echo "Sync check complete."
+```
+
+**If sync issues found:**
+
+1. Report discrepancies to user before proceeding
+2. Fix critical discrepancies (In Progress with no branch = stale state)
+3. Document any unresolved sync issues
+
+**Skill:** `project-board-enforcement`
 
 ---
 
@@ -263,14 +340,19 @@ If no work in progress:
 Before proceeding to work:
 
 - [ ] Environment verified (gh, git, env vars)
+- [ ] **GITHUB_PROJECT_NUM and GH_PROJECT_OWNER set**
 - [ ] Development services detected and status reported
 - [ ] Repository state understood
-- [ ] GitHub Project state checked
+- [ ] **GitHub Project state checked (via project board, not labels)**
+- [ ] **Project board sync verified (Step 3.5)**
+- [ ] **Sync discrepancies reported/fixed**
 - [ ] Memory searched for context
 - [ ] Active work detected or new work identified
 - [ ] Environment bootstrapped if needed
 - [ ] Required services started (if applicable)
 - [ ] State reported to user
+
+**Skill:** `project-board-enforcement`
 
 ## Integration
 

@@ -21,16 +21,42 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 
 ### Step 1: Issue Check
 
-**Question:** Am I working on a clearly defined GitHub issue?
+**Question:** Am I working on a clearly defined GitHub issue that is tracked in the project board?
 
 **Actions:**
 - If no issue exists → Create one using `issue-prerequisite` skill
 - If issue is vague → Ask questions, UPDATE the issue, then proceed
-- Verify issue is in GitHub Project with correct fields
+- **VERIFY** issue is in GitHub Project with correct fields (not assumed - verified)
 
-**Skill:** `issue-prerequisite`
+**Verification (MANDATORY):**
 
-**Gate:** Do not proceed without a GitHub issue URL.
+```bash
+# Verify issue is in project board
+ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.content.number == [ISSUE_NUMBER]) | .id")
+
+if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
+  echo "BLOCKED: Issue not in project board. Add it before proceeding."
+  # Add to project
+  gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --url "$(gh issue view [ISSUE_NUMBER] --json url -q .url)"
+fi
+
+# Verify Status field is set
+STATUS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
+
+if [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
+  echo "BLOCKED: Issue has no Status in project. Set Status before proceeding."
+fi
+```
+
+**Skill:** `issue-prerequisite`, `project-board-enforcement`
+
+**Gate:** Do not proceed unless:
+1. GitHub issue URL exists
+2. Issue is verified in GitHub Project (ITEM_ID obtained)
+3. Status field is set (Ready, Backlog, or In Progress)
 
 ---
 
@@ -98,9 +124,9 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 
 ---
 
-### Step 6: Branch Check
+### Step 6: Branch Check & Status Update
 
-**Question:** Am I on the correct branch?
+**Question:** Am I on the correct branch AND has the project status been updated?
 
 **Rules:**
 - NEVER work on `main`
@@ -109,9 +135,40 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 
 **Naming:** `feature/issue-123-short-description` or `fix/issue-456-bug-name`
 
-**Skill:** `branch-discipline`
+**Project Status Update (MANDATORY):**
 
-**Gate:** Do not proceed if on `main`.
+When starting work, update project board Status to "In Progress":
+
+```bash
+# Get project and field IDs
+PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+
+STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+
+IN_PROGRESS_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
+
+# Update status to In Progress
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_PROGRESS_ID"
+
+# Verify update succeeded
+NEW_STATUS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
+
+if [ "$NEW_STATUS" != "In Progress" ]; then
+  echo "ERROR: Failed to update project status. Cannot proceed."
+  exit 1
+fi
+```
+
+**Skill:** `branch-discipline`, `project-board-enforcement`
+
+**Gate:** Do not proceed if:
+1. On `main` branch
+2. Project Status not updated to "In Progress"
 
 ---
 
@@ -291,7 +348,20 @@ If blocked, return to Step 9 or Step 10.
 
 ## Throughout the Process
 
-**Issue updates happen CONTINUOUSLY, not as a separate step.**
+**Issue AND project board updates happen CONTINUOUSLY, not as a separate step.**
+
+### Mandatory Project Board Updates
+
+These updates are NOT optional. They are gates.
+
+| Moment | Project Status | Verification |
+|--------|----------------|--------------|
+| Starting work (Step 6) | → In Progress | Verify status changed |
+| PR created (Step 12) | → In Review | Verify status changed |
+| Work complete | → Done | Verify status changed |
+| Blocked | → Blocked | Verify status changed |
+
+### Issue Comment Updates
 
 At minimum, update the issue:
 - When starting work (Status → In Progress)
@@ -300,7 +370,20 @@ At minimum, update the issue:
 - When completing verification
 - When raising PR
 
-**Skill:** `issue-lifecycle`, `project-status-sync`
+### Project Board Query (NOT Labels)
+
+**CRITICAL:** Use project board for state queries, NOT labels.
+
+```bash
+# WRONG - do not use labels for state
+gh issue list --label "status:in-progress"
+
+# RIGHT - query project board
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "In Progress")'
+```
+
+**Skill:** `issue-lifecycle`, `project-status-sync`, `project-board-enforcement`
 
 ## Error Handling
 
@@ -328,31 +411,60 @@ Work is complete when:
 - [ ] PR created with complete documentation
 - [ ] CI is green
 - [ ] Issue status updated
-- [ ] GitHub Project fields updated
+- [ ] **GitHub Project Status → Done (VERIFIED)**
+- [ ] **Project board update confirmed (not assumed)**
 
 ## Quick Reference
 
 | Step | Skill(s) | Gate |
 |------|----------|------|
-| 1 | issue-prerequisite | Must have issue |
+| 1 | issue-prerequisite, **project-board-enforcement** | Must have issue **IN PROJECT BOARD** |
 | 2 | issue-lifecycle | - |
 | 3 | issue-decomposition | - |
 | 4 | memory-integration | - |
 | 5 | pre-work-research | - |
-| 6 | branch-discipline | Must not be on main |
+| 6 | branch-discipline, **project-board-enforcement** | Must not be on main, **Status → In Progress** |
 | 7 | tdd-full-coverage, strict-typing, inline-documentation, inclusive-language, no-deferred-work | - |
 | 8 | acceptance-criteria-verification, research-after-failure | - |
 | 9 | review-scope, comprehensive-review, security-review, review-gate | **Review artifact required** |
 | 10 | apply-all-findings, deferred-finding | **Unaddressed: 0 required** |
 | 11 | tdd-full-coverage | - |
-| 12 | clean-commits, pr-creation, review-gate | **Hook blocks without artifact** |
-| 13 | ci-monitoring, verification-before-merge | Must be green |
+| 12 | clean-commits, pr-creation, review-gate, **project-board-enforcement** | **Hook blocks without artifact**, **Status → In Review** |
+| 13 | ci-monitoring, verification-before-merge | Must be green, **Status → Done on merge** |
 
 ## Enforcement
 
 This process is enforced by:
 
+### Review Enforcement
 - **PreToolUse hook** on `gh pr create` - Blocks without review artifact
 - **PreToolUse hook** on `gh pr merge` - Verifies CI and review
 - **Stop hook** - Verifies review completion before session end
 - **Conditional rules** - Security-sensitive files trigger security review requirement
+
+### Project Board Enforcement
+- **PreToolUse hook** on `git checkout -b` - Verifies issue is in project board
+- **PreToolUse hook** on `git checkout -b` - Updates Status → In Progress
+- **PreToolUse hook** on `gh pr create` - Updates Status → In Review
+- **Stop hook** - Verifies project board status matches work state
+
+### Project Board Gate Failures
+
+If project board verification fails:
+
+```markdown
+## BLOCKED: Project Board Compliance Failed
+
+**Issue:** #[NUMBER]
+**Problem:** [Issue not in project / Status not set / Update failed]
+
+**Required Action:**
+1. Add issue to project board
+2. Set required fields (Status, Type, Priority)
+3. Retry the blocked action
+
+**Command to add:**
+gh project item-add $GITHUB_PROJECT_NUM --owner $GH_PROJECT_OWNER --url [ISSUE_URL]
+```
+
+Do NOT proceed past a project board gate failure. Fix it first.

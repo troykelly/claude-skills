@@ -47,56 +47,107 @@ This will:
 
 Only proceed when user types exactly: `PROCEED`
 
-## State Management (GitHub-Native)
+## State Management (Project Board is THE Source of Truth)
 
-**Core principle:** GitHub is the ONLY source of truth. No filesystem state files.
+**Core principle:** The GitHub Project Board is the ONLY source of truth for work state. NOT labels. NOT comments. The project board.
 
 State is tracked via:
-1. **GitHub Labels** - Issue/PR status
-2. **GitHub Issue Comments** - Activity log and context
-3. **GitHub Project Fields** - Orchestration tracking
+1. **GitHub Project Board Status Field** - THE source of truth for all state
+2. **GitHub Issue Comments** - Activity log and context (supplementary)
+3. **Labels** - Only for lineage tracking, NOT for state
 
-### GitHub Labels for State
+### Project Board Status Field (THE Source of Truth)
 
-| Label | Description | Applied To |
-|-------|-------------|------------|
-| `status:pending` | Ready for work | Issues |
-| `status:in-progress` | Worker assigned | Issues |
-| `status:awaiting-dependencies` | Blocked on child issues | Issues |
-| `status:blocked` | Truly blocked | Issues |
-| `review-finding` | Created from review | Issues |
-| `spawned-from:#N` | Lineage tracking | Issues |
-| `depth:N` | Issue depth (1=child, 2=grandchild) | Issues |
+| Status | Description | Transition From |
+|--------|-------------|-----------------|
+| Backlog | Not ready for work | (initial) |
+| Ready | Ready for work, pending assignment | Backlog |
+| In Progress | Worker assigned and working | Ready, Blocked |
+| In Review | PR created, awaiting merge | In Progress |
+| Blocked | Cannot proceed | Any |
+| Done | Completed | In Review |
 
-### Create Labels (Run Once)
+### Labels (Supplementary Only - NOT for State)
+
+| Label | Purpose | NOT Used For |
+|-------|---------|--------------|
+| `review-finding` | Origin tracking | State |
+| `spawned-from:#N` | Lineage tracking | State |
+| `depth:N` | Recursion limit | State |
+| `epic-[name]` | Epic grouping | State |
+
+**CRITICAL:** Do NOT use labels like `status:pending` or `status:in-progress`. Use the project board.
+
+### State Queries via Project Board
 
 ```bash
-# Run scripts/create-labels.sh or:
-gh label create "status:pending" --color "0E8A16" --description "Ready for work" --force 2>/dev/null || true
-gh label create "status:in-progress" --color "1D76DB" --description "Worker assigned" --force 2>/dev/null || true
-gh label create "status:awaiting-dependencies" --color "FBCA04" --description "Blocked on child issues" --force 2>/dev/null || true
-gh label create "status:blocked" --color "D93F0B" --description "Truly blocked" --force 2>/dev/null || true
-gh label create "review-finding" --color "C2E0C6" --description "Created from code review" --force 2>/dev/null || true
-```
+# Get pending issues in scope (Status = Ready)
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
 
-### State Queries via GitHub API
+# Get in-progress issues (Status = In Progress)
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
 
-```bash
-# Get pending issues in scope
-gh issue list --milestone "v1.0.0" --label "status:pending" --json number --jq '.[].number'
+# Get blocked issues (Status = Blocked)
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
 
-# Get in-progress issues
-gh issue list --milestone "v1.0.0" --label "status:in-progress" --json number --jq '.[].number'
+# Get issues in review (Status = In Review)
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
 
-# Get issues awaiting dependencies
-gh issue list --label "status:awaiting-dependencies" --json number,labels --jq '.[] | {number, spawned_from: (.labels[] | select(.name | startswith("spawned-from:")) | .name)}'
+# Count by status
+gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq '[.items[] | select(.status.name == "In Progress")] | length'
 
-# Get review-finding child issues for parent #123
+# Get child issues via label (lineage only, not state)
 gh issue list --label "spawned-from:#123" --json number,state --jq '.'
-
-# Count active workers (issues in-progress)
-gh issue list --label "status:in-progress" --json number --jq 'length'
 ```
+
+### State Updates via Project Board
+
+```bash
+# Helper function to update project board status
+update_project_status() {
+  local issue=$1
+  local new_status=$2  # Ready, In Progress, In Review, Blocked, Done
+
+  # Get item ID
+  ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r ".items[] | select(.content.number == $issue) | .id")
+
+  if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
+    echo "ERROR: Issue #$issue not in project board. Add it first."
+    return 1
+  fi
+
+  # Get project and field IDs
+  PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
+    jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+
+  STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+
+  OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r ".fields[] | select(.name == \"Status\") | .options[] | select(.name == \"$new_status\") | .id")
+
+  # Update status
+  gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+    --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+
+  # Verify update
+  ACTUAL=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r ".items[] | select(.content.number == $issue) | .status.name")
+
+  if [ "$ACTUAL" != "$new_status" ]; then
+    echo "ERROR: Status update failed. Expected $new_status, got $ACTUAL"
+    return 1
+  fi
+
+  echo "Updated issue #$issue status to $new_status"
+  return 0
+}
 
 ### Orchestration Comment Template
 
@@ -235,32 +286,48 @@ fi
                               └───────────────────┘
 ```
 
-### Loop Implementation (GitHub-Native)
+### Loop Implementation (Project Board-Native)
 
 ```bash
-# Helper functions using GitHub as state store
+# Helper functions using PROJECT BOARD as state store (NOT labels)
 
 get_pending_issues() {
-  gh issue list --milestone "$MILESTONE" --label "status:pending" --json number --jq '.[].number'
+  # Query project board for Status = Ready
+  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
 }
 
 get_in_progress_issues() {
-  gh issue list --milestone "$MILESTONE" --label "status:in-progress" --json number --jq '.[].number'
+  # Query project board for Status = In Progress
+  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
 }
 
-get_awaiting_issues() {
-  gh issue list --milestone "$MILESTONE" --label "status:awaiting-dependencies" --json number --jq '.[].number'
+get_blocked_issues() {
+  # Query project board for Status = Blocked
+  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
+}
+
+get_in_review_issues() {
+  # Query project board for Status = In Review
+  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+    --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
 }
 
 check_deviation_resolution() {
   local issue=$1
+  # Check if all children (via label) are closed
   local open_children=$(gh issue list --label "spawned-from:#$issue" --state open --json number --jq 'length')
   if [ "$open_children" = "0" ]; then
-    # All children closed, resume parent
-    gh issue edit "$issue" --remove-label "status:awaiting-dependencies" --add-label "status:pending"
+    # All children closed, resume parent via PROJECT BOARD (not labels)
+    update_project_status "$issue" "Ready"
+
     gh issue comment "$issue" --body "## Deviation Resolved
 
 All child issues are now closed. Ready to resume.
+
+**Project Status:** Ready (updated in project board)
 
 ---
 *Orchestrator: $ORCHESTRATION_ID*"
@@ -272,11 +339,61 @@ All child issues are now closed. Ready to resume.
 mark_issue_in_progress() {
   local issue=$1
   local worker=$2
-  gh issue edit "$issue" --remove-label "status:pending" --add-label "status:in-progress"
+
+  # Update PROJECT BOARD status (not labels)
+  update_project_status "$issue" "In Progress"
+
   gh issue comment "$issue" --body "## Worker Assigned
 
 **Worker:** \`$worker\`
 **Started:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+**Project Status:** In Progress (updated in project board)
+
+---
+*Orchestrator: $ORCHESTRATION_ID*"
+}
+
+mark_issue_in_review() {
+  local issue=$1
+  local pr=$2
+
+  # Update PROJECT BOARD status
+  update_project_status "$issue" "In Review"
+
+  gh issue comment "$issue" --body "## PR Created
+
+**PR:** #$pr
+**Project Status:** In Review (updated in project board)
+
+---
+*Orchestrator: $ORCHESTRATION_ID*"
+}
+
+mark_issue_blocked() {
+  local issue=$1
+  local reason=$2
+
+  # Update PROJECT BOARD status
+  update_project_status "$issue" "Blocked"
+
+  gh issue comment "$issue" --body "## Issue Blocked
+
+**Reason:** $reason
+**Project Status:** Blocked (updated in project board)
+
+---
+*Orchestrator: $ORCHESTRATION_ID*"
+}
+
+mark_issue_done() {
+  local issue=$1
+
+  # Update PROJECT BOARD status
+  update_project_status "$issue" "Done"
+
+  gh issue comment "$issue" --body "## Issue Complete
+
+**Project Status:** Done (updated in project board)
 
 ---
 *Orchestrator: $ORCHESTRATION_ID*"
@@ -288,10 +405,14 @@ while true; do
   post_orchestration_status
 
   # ─────────────────────────────────────────────────────────────
-  # 1. CHECK DEVIATION RESOLUTIONS
+  # 1. CHECK FOR ISSUES NEEDING STATUS SYNC
   # ─────────────────────────────────────────────────────────────
-  for issue in $(get_awaiting_issues); do
-    check_deviation_resolution "$issue"
+  # Check if any issues with open children need to be resumed
+  for issue in $(gh issue list --label "spawned-from:" --state closed --json number --jq '.[].number' 2>/dev/null | sort -u); do
+    parent=$(gh issue view "$issue" --json labels --jq '.labels[] | select(.name | startswith("spawned-from:")) | .name' | sed 's/spawned-from:#//')
+    if [ -n "$parent" ]; then
+      check_deviation_resolution "$parent"
+    fi
   done
 
   # ─────────────────────────────────────────────────────────────
@@ -315,9 +436,15 @@ Complete \`comprehensive-review\` and post artifact to issue before merge."
 
       if [ "$AUTO_MERGE" = "true" ]; then
         gh pr merge "$pr" --squash --auto
+
+        # Update project board status to Done
+        mark_issue_done "$ISSUE"
+
         gh issue comment "$ISSUE" --body "## PR Merged
 
 PR #$pr merged automatically after CI passed.
+
+**Project Status:** Done (updated in project board)
 
 ---
 *Orchestrator: $ORCHESTRATION_ID*"
@@ -330,9 +457,11 @@ PR #$pr merged automatically after CI passed.
   # ─────────────────────────────────────────────────────────────
   # 3. SPAWN NEW WORKERS (respecting capacity)
   # ─────────────────────────────────────────────────────────────
+  # Count via PROJECT BOARD (not labels)
   active_count=$(get_in_progress_issues | wc -l | tr -d ' ')
 
   while [ "$active_count" -lt 5 ]; do
+    # Get next issue from PROJECT BOARD (not labels)
     next_issue=$(get_pending_issues | head -1)
 
     if [ -z "$next_issue" ]; then
@@ -340,20 +469,25 @@ PR #$pr merged automatically after CI passed.
     fi
 
     worker_id="worker-$(date +%s)-$next_issue"
+
+    # Update PROJECT BOARD status before spawning
     mark_issue_in_progress "$next_issue" "$worker_id"
+
     spawn_worker "$next_issue" "$worker_id"
     active_count=$((active_count + 1))
   done
 
   # ─────────────────────────────────────────────────────────────
-  # 4. EVALUATE STATE
+  # 4. EVALUATE STATE (via PROJECT BOARD)
   # ─────────────────────────────────────────────────────────────
+  # All counts come from PROJECT BOARD, not labels
   pending=$(get_pending_issues | wc -l | tr -d ' ')
   in_progress=$(get_in_progress_issues | wc -l | tr -d ' ')
-  awaiting=$(get_awaiting_issues | wc -l | tr -d ' ')
+  in_review=$(get_in_review_issues | wc -l | tr -d ' ')
+  blocked=$(get_blocked_issues | wc -l | tr -d ' ')
   open_prs=$(gh pr list --json number --jq 'length')
 
-  if [ "$pending" -eq 0 ] && [ "$in_progress" -eq 0 ] && [ "$awaiting" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
+  if [ "$pending" -eq 0 ] && [ "$in_progress" -eq 0 ] && [ "$in_review" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
     # All done!
     complete_orchestration
     exit 0
@@ -365,9 +499,9 @@ PR #$pr merged automatically after CI passed.
     exit 0  # Will be woken by wake mechanism
   fi
 
-  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$awaiting" -gt 0 ]; then
-    # Waiting for child issues
-    enter_sleep "waiting_for_child_issues"
+  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$blocked" -gt 0 ]; then
+    # All remaining work is blocked
+    enter_sleep "all_remaining_blocked"
     exit 0
   fi
 
@@ -836,10 +970,13 @@ This skill coordinates:
 - `apply-all-findings` - All findings addressed
 - `deferred-finding` - Child issue creation
 - `review-gate` - PR creation verification
+- **`project-board-enforcement`** - ALL state queries and updates
 
-This skill uses GitHub-native state:
-- Issue labels for status tracking
-- Issue comments for activity log
-- `spawned-from:#N` labels for lineage
-- `depth:N` labels for recursion limit
+This skill uses **PROJECT BOARD as the source of truth**:
+- **Project Board Status field** - THE source of truth for all state
+- Issue comments for activity log (supplementary)
+- `spawned-from:#N` labels for lineage (supplementary, NOT for state)
+- `depth:N` labels for recursion limit (supplementary)
 - Tracking issue for orchestration status
+
+**CRITICAL:** Do NOT use labels for state tracking. Use project board.

@@ -22,6 +22,14 @@ Every work request flows through intake. This skill determines scope, gathers re
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
+│               STEP 0: PROJECT BOARD READINESS (GATE)                │
+│  Is GITHUB_PROJECT_NUM set?                                         │
+│  Is project board accessible?                                       │
+│  Are required fields configured?                                    │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
 │                    CLARIFYING QUESTIONS                              │
 │  What is the user trying to achieve?                                │
 │  What does success look like?                                        │
@@ -47,8 +55,60 @@ Every work request flows through intake. This skill determines scope, gathers re
              │               │               │               │
              ▼               ▼               ▼               ▼
       issue-prerequisite  issue-prerequisite  epic-management  initiative-
-                          + decomposition   + research spikes  architecture
+      + project-board-    + decomposition    + research spikes  architecture
+        enforcement       + project-board-  + project-board-  + project-board-
+                           enforcement       enforcement       enforcement
 ```
+
+## Step 0: Project Board Readiness (GATE)
+
+**Before any work intake, verify project board infrastructure is ready.**
+
+This is a gate. Do not proceed to clarifying questions until this passes.
+
+```bash
+# Verify environment variables are set
+if [ -z "$GITHUB_PROJECT_NUM" ]; then
+  echo "BLOCKED: GITHUB_PROJECT_NUM not set"
+  echo "Set with: export GITHUB_PROJECT_NUM=<number>"
+  exit 1
+fi
+
+if [ -z "$GH_PROJECT_OWNER" ]; then
+  echo "BLOCKED: GH_PROJECT_OWNER not set"
+  echo "Set with: export GH_PROJECT_OWNER=@me  # or org name"
+  exit 1
+fi
+
+# Verify project is accessible
+if ! gh project view "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json > /dev/null 2>&1; then
+  echo "BLOCKED: Cannot access project $GITHUB_PROJECT_NUM"
+  echo "Verify project exists and you have access"
+  exit 1
+fi
+
+# Verify required fields exist
+FIELDS=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json | jq -r '.fields[].name')
+
+for required in "Status" "Type" "Priority"; do
+  if ! echo "$FIELDS" | grep -q "^$required$"; then
+    echo "WARNING: Required field '$required' not found in project"
+    echo "Consider adding this field for full tracking support"
+  fi
+done
+
+echo "Project board ready: $GITHUB_PROJECT_NUM"
+```
+
+**If gate fails:**
+1. Configure missing environment variables
+2. Create project board if needed
+3. Add required fields (Status, Type, Priority)
+4. Re-run readiness check
+
+**Skill:** `project-board-enforcement`
+
+---
 
 ## Step 1: Clarifying Questions
 
@@ -275,10 +335,16 @@ Massive Request
 
 ## Checklist
 
+- [ ] **Project board readiness verified (Step 0 gate passed)**
+- [ ] **GITHUB_PROJECT_NUM and GH_PROJECT_OWNER set**
 - [ ] Asked clarifying questions
 - [ ] Understood the goal (not just the task)
 - [ ] Identified unknowns
 - [ ] Counted deliverables
 - [ ] Assessed scope (Trivial/Small/Large/Massive)
 - [ ] Documented intake in memory
-- [ ] Routed to appropriate skill
+- [ ] Routed to appropriate skill (with project-board-enforcement)
+
+**Skill:** `project-board-enforcement`
+
+**Gate:** Cannot proceed to any downstream skill without project board readiness verified.

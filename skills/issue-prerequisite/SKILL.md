@@ -101,7 +101,7 @@ Once information is gathered:
 
 ```bash
 # Create the issue
-gh issue create \
+ISSUE_URL=$(gh issue create \
   --title "[Type] Title here" \
   --body "## Description
 
@@ -119,14 +119,98 @@ gh issue create \
 
 ## Technical Notes
 
-[Any technical context]"
+[Any technical context]" 2>&1 | tail -1)
 
-# Add to project
-gh project item-add [PROJECT_NUMBER] --owner @me --url [ISSUE_URL]
+ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
+echo "Created issue #$ISSUE_NUMBER"
+```
 
-# Set project fields
-gh project item-edit --project-id [PROJECT_ID] --id [ITEM_ID] \
-  --field-id [STATUS_FIELD_ID] --single-select-option-id [READY_OPTION_ID]
+### Adding to Project Board (MANDATORY)
+
+**This step is NOT optional. It is a gate.**
+
+```bash
+# Add to project - REQUIRED
+gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --url "$ISSUE_URL"
+
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to add issue to project. Cannot proceed."
+  echo "Issue #$ISSUE_NUMBER exists but is NOT tracked in project board."
+  exit 1
+fi
+
+# Get the item ID - REQUIRED for field updates
+ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.content.number == $ISSUE_NUMBER) | .id")
+
+if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
+  echo "ERROR: Issue added but item ID not found. Cannot set fields."
+  exit 1
+fi
+
+echo "Issue #$ISSUE_NUMBER added to project with item ID: $ITEM_ID"
+```
+
+### Setting Project Fields (MANDATORY)
+
+**All fields must be set before proceeding.**
+
+```bash
+# Get project ID
+PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+
+# Get field IDs
+STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+
+TYPE_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Type") | .id')
+
+PRIORITY_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Priority") | .id')
+
+# Get option IDs for the values we want to set
+READY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id')
+
+TYPE_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".fields[] | select(.name == \"Type\") | .options[] | select(.name == \"[TYPE]\") | .id")
+
+PRIORITY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".fields[] | select(.name == \"Priority\") | .options[] | select(.name == \"[PRIORITY]\") | .id")
+
+# Set Status = Ready
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
+
+# Set Type
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$TYPE_FIELD_ID" --single-select-option-id "$TYPE_OPTION_ID"
+
+# Set Priority
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$PRIORITY_FIELD_ID" --single-select-option-id "$PRIORITY_OPTION_ID"
+```
+
+### Verify Project Board Setup (GATE)
+
+**Do not proceed until verification passes.**
+
+```bash
+# Verify all fields are set
+VERIFY=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq ".items[] | select(.content.number == $ISSUE_NUMBER)")
+
+STATUS=$(echo "$VERIFY" | jq -r '.status.name')
+TYPE=$(echo "$VERIFY" | jq -r '.type.name // "unset"')
+
+if [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
+  echo "GATE FAILED: Status not set for issue #$ISSUE_NUMBER"
+  exit 1
+fi
+
+echo "VERIFIED: Issue #$ISSUE_NUMBER is in project with Status=$STATUS"
 ```
 
 ## Issue Quality Check
@@ -188,4 +272,11 @@ Before proceeding past this gate:
 - [ ] Issue is accessible (correct repo, not archived)
 - [ ] Issue has description
 - [ ] Issue has at least one acceptance criterion
-- [ ] Issue is in GitHub Project
+- [ ] **Issue is in GitHub Project (VERIFIED with ITEM_ID)**
+- [ ] **Status field is set (Ready or Backlog)**
+- [ ] **Type field is set**
+- [ ] **Priority field is set**
+
+**Gate:** Cannot proceed to `issue-driven-development` Step 2 without all checkboxes verified.
+
+**Skill:** `project-board-enforcement`

@@ -93,15 +93,74 @@ gh issue create \
 [Associated milestone or 'Not assigned']"
 ```
 
-### Step 3: Add to Project
+### Step 3: Add to Project Board (MANDATORY GATE)
+
+**This step is NOT optional. Epics MUST be in the project board.**
 
 ```bash
-# Add epic to project
-gh project item-add $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" \
-  --url "[EPIC_ISSUE_URL]"
+# Get the epic issue URL
+EPIC_URL=$(gh issue view [EPIC_NUMBER] --json url -q '.url')
 
-# Set epic-specific fields if available
+# Add epic to project - REQUIRED
+gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --url "$EPIC_URL"
+
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to add epic to project. Cannot proceed."
+  exit 1
+fi
+
+# Get the item ID - REQUIRED
+ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.content.number == [EPIC_NUMBER]) | .id")
+
+if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
+  echo "ERROR: Epic added but item ID not found."
+  exit 1
+fi
+
+echo "Epic #[EPIC_NUMBER] added to project with item ID: $ITEM_ID"
 ```
+
+### Step 3.5: Set Project Board Fields (MANDATORY)
+
+**All epics must have Type = Epic set in project board.**
+
+```bash
+# Get project and field IDs
+PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
+  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+
+STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+
+TYPE_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Type") | .id')
+
+# Get option IDs
+BACKLOG_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Backlog") | .id')
+
+EPIC_TYPE_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Type") | .options[] | select(.name == "Epic") | .id')
+
+# Set Status = Backlog (or Ready if no issues yet to create)
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$BACKLOG_OPTION_ID"
+
+# Set Type = Epic
+gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$TYPE_FIELD_ID" --single-select-option-id "$EPIC_TYPE_OPTION_ID"
+
+# Verify fields were set
+echo "Verifying project board fields..."
+VERIFY=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq ".items[] | select(.content.number == [EPIC_NUMBER])")
+
+echo "Status: $(echo "$VERIFY" | jq -r '.status.name')"
+echo "Type: $(echo "$VERIFY" | jq -r '.type.name // "not set"')"
+```
+
+**Skill:** `project-board-enforcement`
 
 ## Creating Issues Within an Epic
 
@@ -134,6 +193,40 @@ Every issue in an epic must:
 1. Have the `epic-[name]` label
 2. Reference the epic in description: "Part of epic #[N]"
 3. Share the same milestone (if set)
+4. **Be in the project board with Status and Type set**
+5. **Have Epic field set to parent epic number (if field exists)**
+
+### Adding Child Issues to Project Board (MANDATORY)
+
+```bash
+# After creating child issue, add to project board
+CHILD_URL=$(gh issue view [CHILD_NUMBER] --json url -q '.url')
+
+gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --url "$CHILD_URL"
+
+# Get item ID
+CHILD_ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r ".items[] | select(.content.number == [CHILD_NUMBER]) | .id")
+
+# Set Status = Ready
+gh project item-edit --project-id "$PROJECT_ID" --id "$CHILD_ITEM_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
+
+# Set Type (Feature, Bug, etc. as appropriate)
+gh project item-edit --project-id "$PROJECT_ID" --id "$CHILD_ITEM_ID" \
+  --field-id "$TYPE_FIELD_ID" --single-select-option-id "$TYPE_OPTION_ID"
+
+# Link to parent epic (if Epic field exists)
+EPIC_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
+  --format json | jq -r '.fields[] | select(.name == "Epic") | .id')
+
+if [ -n "$EPIC_FIELD_ID" ] && [ "$EPIC_FIELD_ID" != "null" ]; then
+  gh project item-edit --project-id "$PROJECT_ID" --id "$CHILD_ITEM_ID" \
+    --field-id "$EPIC_FIELD_ID" --text "#[EPIC_NUMBER]"
+fi
+```
+
+**Skill:** `project-board-enforcement`
 
 ## Tracking Epic Progress
 
@@ -376,10 +469,19 @@ mcp__memory__create_entities([{
 
 - [ ] Created epic-specific label
 - [ ] Created epic tracking issue
-- [ ] Added epic to project
+- [ ] **Added epic to project board (VERIFIED with ITEM_ID)**
+- [ ] **Set project Status = Backlog or Ready**
+- [ ] **Set project Type = Epic**
 - [ ] Defined success criteria
 - [ ] Documented dependencies
 - [ ] Created initial issues with epic label
+- [ ] **Added all child issues to project board**
+- [ ] **Set Status and Type for all child issues**
+- [ ] **Linked children to epic (Epic field if available)**
 - [ ] Set milestone (if applicable)
 - [ ] Linked to initiative (if applicable)
 - [ ] Stored in knowledge graph
+
+**Gate:** Cannot create child issues or begin work without epic and all issues in project board.
+
+**Skill:** `project-board-enforcement`

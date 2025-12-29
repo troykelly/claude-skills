@@ -1,0 +1,6 @@
+{
+  "source_repo": "anthropics/claude-plugins-official",
+  "last_sync": "2025-12-29T04:05:59Z",
+  "commit_hash": "6d3752c000e2b3d0e6137bd7adb04895d6f40f14",
+  "synced_paths": ["plugins/pr-review-toolkit/agents/silent-failure-hunter.md","plugins/pr-review-toolkit/agents/pr-test-analyzer.md","plugins/pr-review-toolkit/agents/type-design-analyzer.md","plugins/pr-review-toolkit/agents/code-simplifier.md","plugins/pr-review-toolkit/agents/comment-analyzer.md","plugins/feature-dev/agents/code-architect.md","plugins/feature-dev/agents/code-explorer.md","plugins/plugin-dev/skills/skill-development","plugins/plugin-dev/skills/hook-development","plugins/plugin-dev/skills/agent-development"]
+}

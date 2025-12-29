@@ -8,6 +8,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-orchestration-sleep.sh",
+            "timeout": 30
           }
         ]
       }
@@ -30,6 +35,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-merge.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-tests-pass.sh",
+            "timeout": 10
           }
         ]
       }
@@ -44,14 +54,29 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/track-test-results.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [
       {
         "hooks": [
           {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-ci-before-stop.sh",
+            "timeout": 30
+          },
+          {
             "type": "prompt",
-            "prompt": "Before stopping, verify: 1) If source code was modified, was comprehensive-review completed and artifact posted to issue? 2) Are there any unaddressed review findings? 3) If a PR was created, does the issue have a COMPLETE review artifact? If any review requirements are incomplete, inform the user what needs to be done before stopping."
+            "prompt": "Before stopping, verify ALL of the following:\n\n1. **CI Status**: If any PRs were created in this session, check their CI status using `gh pr checks [PR_NUMBER]`. If CI is still running or has failures, you should NOT stop until CI is green or failures are documented.\n\n2. **Review Artifact**: If source code was modified, was comprehensive-review completed and artifact posted to the issue? Check the issue for a comment containing `<!-- REVIEW:START -->`.\n\n3. **Unaddressed Findings**: Are there any unaddressed review findings? The review artifact should show `Unaddressed: 0`.\n\n4. **PR-Issue Link**: If a PR was created, does the issue have a COMPLETE review artifact?\n\nIf CI is incomplete, respond: 'CI is still running for PR #X. I should wait for CI to complete before stopping.'\n\nIf any review requirements are incomplete, inform the user what needs to be done before stopping."
           }
         ]
       }

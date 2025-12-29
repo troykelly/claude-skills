@@ -3,9 +3,15 @@
 #
 # Exit codes:
 #   0 = Allow
-#   2 = Deny
+#   2 = Deny (message shown to Claude)
 
 set -euo pipefail
+
+# Source logging utility if available
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/log-event.sh" ]; then
+  source "$SCRIPT_DIR/lib/log-event.sh"
+fi
 
 INPUT=$(cat)
 
@@ -39,6 +45,8 @@ fi
 MERGEABLE=$(echo "$PR_DATA" | jq -r '.mergeable // "UNKNOWN"')
 
 if [ "$MERGEABLE" = "CONFLICTING" ]; then
+  log_hook_event "PreToolUse" "validate-pr-merge" "blocked" \
+    "{\"pr\": $PR_NUM, \"reason\": \"conflicts\"}"
   cat >&2 <<EOF
 MERGE BLOCKED
 
@@ -58,6 +66,8 @@ FAILED_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // [] | map(select(.
 PENDING_CHECKS=$(echo "$PR_DATA" | jq -r '.statusCheckRollup // [] | map(select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING")) | length')
 
 if [ "$FAILED_CHECKS" != "0" ] && [ -n "$FAILED_CHECKS" ]; then
+  log_hook_event "PreToolUse" "validate-pr-merge" "blocked" \
+    "{\"pr\": $PR_NUM, \"reason\": \"ci_failed\", \"failed_checks\": $FAILED_CHECKS}"
   cat >&2 <<EOF
 MERGE BLOCKED
 
@@ -70,6 +80,8 @@ EOF
 fi
 
 if [ "$PENDING_CHECKS" != "0" ] && [ -n "$PENDING_CHECKS" ]; then
+  log_hook_event "PreToolUse" "validate-pr-merge" "blocked" \
+    "{\"pr\": $PR_NUM, \"reason\": \"ci_pending\", \"pending_checks\": $PENDING_CHECKS}"
   cat >&2 <<EOF
 MERGE BLOCKED
 
@@ -81,4 +93,5 @@ EOF
   exit 2
 fi
 
+log_hook_event "PreToolUse" "validate-pr-merge" "allowed" "{\"pr\": $PR_NUM}"
 exit 0

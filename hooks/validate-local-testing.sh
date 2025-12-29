@@ -10,6 +10,12 @@
 
 set -euo pipefail
 
+# Source logging utility if available
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/log-event.sh" ]; then
+  source "$SCRIPT_DIR/lib/log-event.sh"
+fi
+
 INPUT=$(cat)
 
 # Only check Bash commands
@@ -116,6 +122,8 @@ TESTING_EXISTS=$(gh api "/repos/$REPO/issues/$ISSUE/comments" \
   --jq '[.[] | select(.body | contains("<!-- LOCAL-TESTING:START -->"))] | length' 2>/dev/null || echo "0")
 
 if [ "$TESTING_EXISTS" = "0" ]; then
+  log_hook_event "PreToolUse" "validate-local-testing" "blocked" \
+    "{\"issue\": $ISSUE, \"reason\": \"no_testing_evidence\", \"services\": \"$REQUIRED_SERVICES\"}"
   cat >&2 <<EOF
 LOCAL TESTING GATE BLOCKED
 
@@ -153,4 +161,5 @@ EOF
 fi
 
 # Artifact exists, allow
+log_hook_event "PreToolUse" "validate-local-testing" "allowed" "{\"issue\": $ISSUE}"
 exit 0

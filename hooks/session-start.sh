@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Source logging utility if available
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/log-event.sh" ]; then
+  source "$SCRIPT_DIR/lib/log-event.sh"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,6 +21,8 @@ NC='\033[0m'
 exec 1>&2
 
 echo -e "${BLUE}[issue-driven-development]${NC} Validating environment..."
+
+log_hook_event "SessionStart" "session-start" "started" "{}"
 
 WARNINGS=()
 ERRORS=()
@@ -188,6 +196,10 @@ fi
 
 if [ ${#ERRORS[@]} -eq 0 ] && [ ${#WARNINGS[@]} -eq 0 ]; then
     echo -e "${GREEN}All checks passed!${NC}"
+    log_hook_event "SessionStart" "session-start" "completed" '{"status": "all_passed"}'
+else
+    log_hook_event "SessionStart" "session-start" "completed" \
+      "{\"errors\": ${#ERRORS[@]}, \"warnings\": ${#WARNINGS[@]}}"
 fi
 
 echo ""

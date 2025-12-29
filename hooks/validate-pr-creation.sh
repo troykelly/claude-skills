@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+# Source logging utility if available
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/log-event.sh" ]; then
+  source "$SCRIPT_DIR/lib/log-event.sh"
+fi
+
 INPUT=$(cat)
 
 # Only check Bash commands
@@ -50,6 +56,8 @@ REVIEW_EXISTS=$(gh api "/repos/$REPO/issues/$ISSUE/comments" \
   --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length' 2>/dev/null || echo "0")
 
 if [ "$REVIEW_EXISTS" = "0" ]; then
+  log_hook_event "PreToolUse" "validate-pr-creation" "blocked" \
+    "{\"issue\": $ISSUE, \"reason\": \"no_review_artifact\"}"
   cat >&2 <<EOF
 REVIEW GATE BLOCKED
 
@@ -75,6 +83,8 @@ REVIEW_BODY=$(gh api "/repos/$REPO/issues/$ISSUE/comments" \
   --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | last | .body' 2>/dev/null || echo "")
 
 if echo "$REVIEW_BODY" | grep -q "Review Status.*BLOCKED"; then
+  log_hook_event "PreToolUse" "validate-pr-creation" "blocked" \
+    "{\"issue\": $ISSUE, \"reason\": \"review_blocked\"}"
   cat >&2 <<EOF
 REVIEW GATE BLOCKED
 
@@ -90,6 +100,8 @@ fi
 UNADDRESSED=$(echo "$REVIEW_BODY" | grep -oP 'Unaddressed[:\s|]+\K\d+' | head -1 || echo "0")
 
 if [ "$UNADDRESSED" != "0" ] && [ -n "$UNADDRESSED" ]; then
+  log_hook_event "PreToolUse" "validate-pr-creation" "blocked" \
+    "{\"issue\": $ISSUE, \"reason\": \"unaddressed_findings\", \"count\": $UNADDRESSED}"
   cat >&2 <<EOF
 REVIEW GATE BLOCKED
 
@@ -105,4 +117,5 @@ EOF
 fi
 
 # All checks passed
+log_hook_event "PreToolUse" "validate-pr-creation" "allowed" "{\"issue\": $ISSUE}"
 exit 0

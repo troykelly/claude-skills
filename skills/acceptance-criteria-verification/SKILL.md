@@ -45,10 +45,10 @@ For each criterion, run the appropriate verification:
 
 ```bash
 # Run specific tests
-npm test -- --grep "[test pattern]"
+pnpm test --grep "[test pattern]"
 
 # Or run test file
-npm test path/to/specific.test.ts
+pnpm test path/to/specific.test.ts
 ```
 
 #### E2E Tests

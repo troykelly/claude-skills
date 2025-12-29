@@ -35,7 +35,7 @@ Workers MUST execute this checklist before starting work:
 2. [ ] Check issue comments for context/history
 3. [ ] Verify on correct branch (`git branch --show-current`)
 4. [ ] Check worktree is clean (`git status`)
-5. [ ] Run existing tests to verify baseline (`npm test` or equivalent)
+5. [ ] Run existing tests to verify baseline (`pnpm test` or equivalent)
 6. [ ] Post startup comment to issue
 ```
 

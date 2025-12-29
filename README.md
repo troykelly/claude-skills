@@ -84,7 +84,7 @@ Add to `~/.claude/settings.json`:
 
 On each session start, the plugin validates:
 - Required CLI tools (git, gh)
-- Optional CLI tools (node, npm, npx, uvx)
+- Optional CLI tools (node, pnpm, uvx)
 - GitHub CLI authentication status
 - Required environment variables
 - MCP server availability
@@ -98,9 +98,9 @@ This plugin includes recommended MCP server configurations. The following server
 | Server | Purpose | Requires |
 |--------|---------|----------|
 | `git` | Git operations | `uvx` (Python) |
-| `memory` | Knowledge graph | `npx` (Node.js) |
+| `memory` | Knowledge graph | `pnpm dlx` (Node.js) |
 | `github` | GitHub API | `GITHUB_TOKEN` env var |
-| `playwright` | Browser automation | `npx` (Node.js) |
+| `playwright` | Browser automation | `pnpm dlx` (Node.js) |
 
 If servers don't start, install dependencies:
 
@@ -109,9 +109,9 @@ If servers don't start, install dependencies:
 pip install mcp-server-git
 
 # For Node.js servers
-npm install -g @modelcontextprotocol/server-memory
-npm install -g @modelcontextprotocol/server-github
-npm install -g @anthropic/mcp-playwright
+pnpm add -g @modelcontextprotocol/server-memory
+pnpm add -g @modelcontextprotocol/server-github
+pnpm add -g @anthropic/mcp-playwright
 ```
 
 ---
@@ -222,6 +222,7 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 
 | Tool | Purpose | Verification |
 |------|---------|--------------|
+| `pnpm` | Node.js package manager | `pnpm --version` |
 | `op` | 1Password CLI | `op account list` |
 
 ### Required Environment Variables

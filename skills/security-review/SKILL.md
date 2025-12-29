@@ -143,13 +143,13 @@ element.innerHTML = DOMPurify.sanitize(userInput);
 
 | Check | Verify |
 |-------|--------|
-| Dependency Audit | `npm audit` / `pip audit` clean |
+| Dependency Audit | `pnpm audit` / `pip audit` clean |
 | Outdated Packages | No critically outdated dependencies |
 | CVE Check | No known CVEs in dependencies |
 
 ```bash
 # Run dependency audit
-npm audit --production
+pnpm audit --prod
 # or
 pip-audit
 ```
@@ -184,10 +184,10 @@ For each security-sensitive file:
 
 ```bash
 # Audit dependencies
-npm audit --production
+pnpm audit --prod
 
 # Check for outdated
-npm outdated
+pnpm outdated
 ```
 
 ### Step 4: Document Findings
@@ -223,7 +223,7 @@ Add to the main review artifact:
 #### Dependency Audit
 
 ```
-npm audit: 0 vulnerabilities
+pnpm audit: 0 vulnerabilities
 ```
 
 **Security Review Status:** [PASS|ISSUES_FIXED|ISSUES_DEFERRED]
@@ -258,7 +258,7 @@ If security review is extensive, post as separate comment:
 | A03 | Injection | FIXED | Parameterized SQL queries now |
 | A04 | Insecure Design | PASS | - |
 | A05 | Security Misconfiguration | PASS | - |
-| A06 | Vulnerable Components | PASS | npm audit clean |
+| A06 | Vulnerable Components | PASS | pnpm audit clean |
 | A07 | Auth Failures | PASS | Rate limiting, secure sessions |
 | A08 | Data Integrity Failures | PASS | - |
 | A09 | Logging Failures | NOTE | Consider adding auth failure logging |

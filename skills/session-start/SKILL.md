@@ -158,8 +158,8 @@ if [ -f scripts/init.sh ]; then
 fi
 
 # Or common alternatives
-npm ci        # Node projects
-pip install   # Python projects
+pnpm install --frozen-lockfile  # Node projects
+pip install                     # Python projects
 ```
 
 **Verify basic functionality works before starting new work.**

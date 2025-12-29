@@ -61,7 +61,7 @@ check_command() {
 }
 
 check_command node
-check_command npm
+check_command pnpm
 check_command git
 check_command gh
 
@@ -85,7 +85,7 @@ echo ""
 
 # Step 2: Install dependencies
 echo "Installing dependencies..."
-npm ci --silent
+pnpm install --frozen-lockfile --silent
 echo -e "${GREEN}✓${NC} Dependencies installed"
 echo ""
 
@@ -105,13 +105,13 @@ echo ""
 
 # Step 4: Build
 echo "Building project..."
-npm run build --silent
+pnpm build --silent
 echo -e "${GREEN}✓${NC} Build successful"
 echo ""
 
 # Step 5: Run tests
 echo "Running tests..."
-if npm test --silent; then
+if pnpm test --silent; then
     echo -e "${GREEN}✓${NC} Tests passed"
 else
     echo -e "${RED}✗${NC} Tests failed - environment may have issues"
@@ -151,7 +151,7 @@ fi
 # Step 7: Start development server (optional)
 if [ "${START_DEV_SERVER:-false}" = "true" ]; then
     echo "Starting development server..."
-    npm run dev &
+    pnpm dev &
     DEV_PID=$!
 
     # Wait for server to be ready
@@ -173,9 +173,9 @@ echo ""
 echo -e "${GREEN}=== Environment Ready ===${NC}"
 echo ""
 echo "Next steps:"
-echo "  npm run dev    - Start development server"
-echo "  npm test       - Run tests"
-echo "  npm run build  - Build for production"
+echo "  pnpm dev    - Start development server"
+echo "  pnpm test   - Run tests"
+echo "  pnpm build  - Build for production"
 ```
 
 ### Making Executable
@@ -213,9 +213,9 @@ After environment setup, verify basic functionality:
 
 | Test | How | Pass Criteria |
 |------|-----|---------------|
-| Build | `npm run build` | No errors |
-| Tests | `npm test` | All pass |
-| Dev server | `npm run dev` | Server starts |
+| Build | `pnpm build` | No errors |
+| Tests | `pnpm test` | All pass |
+| Dev server | `pnpm dev` | Server starts |
 | Health check | `curl http://[::1]:3000/health` | 200 OK (IPv6-first) |
 | Basic flow | Run E2E test | Passes |
 
@@ -230,7 +230,7 @@ set -euo pipefail
 echo "Running smoke tests..."
 
 # Start dev server
-npm run dev &
+pnpm dev &
 DEV_PID=$!
 sleep 10
 
@@ -247,7 +247,7 @@ fi
 
 # Basic E2E (if available)
 if [ -f "tests/smoke.test.ts" ]; then
-    npm run test:e2e -- tests/smoke.test.ts
+    pnpm test:e2e tests/smoke.test.ts
 fi
 
 # Clean up
@@ -266,7 +266,7 @@ echo "Smoke tests passed"
 ### Prerequisites
 
 - Node.js 18+
-- npm 9+
+- pnpm 8+
 - GitHub CLI (`gh`) authenticated
 
 ### Quick Start
@@ -280,7 +280,7 @@ cd repo
 ./scripts/init.sh
 
 # Start development
-npm run dev
+pnpm dev
 ```
 
 ### Environment Variables
@@ -323,7 +323,7 @@ git commit -m "chore: Update init script for [change]"
 | "command not found" | Install missing prerequisite |
 | "permission denied" | `chmod +x scripts/init.sh` |
 | "node version" | Use nvm: `nvm use 18` |
-| "npm ci failed" | Delete node_modules, try again |
+| "pnpm install failed" | Delete node_modules, try again |
 | "build failed" | Check for type errors, missing deps |
 
 ### Reset Environment
@@ -333,7 +333,7 @@ When environment is in unknown state:
 ```bash
 # Nuclear option
 rm -rf node_modules dist .cache .next
-npm cache clean --force
+pnpm store prune
 ./scripts/init.sh
 ```
 

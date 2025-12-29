@@ -83,7 +83,7 @@ Error Detected
 
 ```bash
 # Capture error output
-npm test 2>&1 | tee error-log.txt
+pnpm test 2>&1 | tee error-log.txt
 
 # Or from failed command
 ./failing-command 2>&1 | tee error-log.txt
@@ -113,7 +113,7 @@ git diff
 env | grep -E "NODE|NPM|PATH"
 
 # Dependency state
-npm ls
+pnpm list
 ```
 
 ### Screenshot (if visual)
@@ -182,21 +182,21 @@ git stash pop
 rm -rf node_modules dist build .cache
 
 # Reinstall dependencies
-npm ci  # Clean install from lock file
+pnpm install --frozen-lockfile  # Clean install from lock file
 
 # Rebuild
-npm run build
+pnpm build
 ```
 
 ### Environment Error Recovery
 
 ```bash
 # Check environment
-env | grep -E "NODE|NPM"
+env | grep -E "NODE|PNPM"
 
 # Reset Node modules
 rm -rf node_modules
-npm ci
+pnpm install --frozen-lockfile
 
 # If using nvm, verify version
 nvm use
@@ -231,20 +231,20 @@ git status
 # Expected: "nothing to commit, working tree clean" or known changes
 
 # Tests pass
-npm test
+pnpm test
 
 # Build succeeds
-npm run build
+pnpm build
 
 # Types check
-npm run typecheck
+pnpm typecheck
 ```
 
 ### Functionality Verification
 
 ```bash
 # Run the specific thing that was broken
-npm test -- --grep "specific test"
+pnpm test --grep "specific test"
 
 # Or verify the feature manually
 ```
@@ -304,10 +304,10 @@ mcp__memory__add_observations({
 git diff HEAD~3
 
 # Did dependencies change?
-git diff HEAD~3 package-lock.json
+git diff HEAD~3 pnpm-lock.yaml
 
 # Clean reinstall
-rm -rf node_modules && npm ci
+rm -rf node_modules && pnpm install --frozen-lockfile
 ```
 
 ### "Works locally, fails in CI"
@@ -319,20 +319,20 @@ rm -rf node_modules && npm ci
 # - Env vars
 
 # Run with CI-like settings
-CI=true npm test
+CI=true pnpm test
 ```
 
 ### "Build was working, now broken"
 
 ```bash
 # Check TypeScript errors
-npm run typecheck
+pnpm typecheck
 
 # Check for circular dependencies
-npx madge --circular src/
+pnpm dlx madge --circular src/
 
 # Clean build
-rm -rf dist && npm run build
+rm -rf dist && pnpm build
 ```
 
 ### "I broke everything"
@@ -346,7 +346,7 @@ git log --oneline
 git reset --hard [GOOD_COMMIT]
 
 # Verify
-npm test
+pnpm test
 
 # Start again more carefully
 ```

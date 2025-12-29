@@ -53,7 +53,7 @@ test('rejects empty email', async () => {
 **MANDATORY. Never skip.**
 
 ```bash
-npm test -- --grep "rejects empty email"
+pnpm test --grep "rejects empty email"
 ```
 
 Confirm:
@@ -86,7 +86,7 @@ Don't add:
 **MANDATORY.**
 
 ```bash
-npm test -- --grep "rejects empty email"
+pnpm test --grep "rejects empty email"
 ```
 
 Confirm:
@@ -113,7 +113,7 @@ Write next failing test for next behavior.
 
 ```bash
 # Check coverage
-npm test -- --coverage
+pnpm test --coverage
 
 # Verify new code is covered
 # Lines: 100%
@@ -199,7 +199,7 @@ After completing TDD cycle (unit tests with mocks):
 
 1. **Ensure services are running** (`docker-compose up -d`)
 2. **Run integration tests against real services**
-3. **Verify migrations apply** (`npm run migrate`)
+3. **Verify migrations apply** (`pnpm migrate`)
 4. **Verify in local environment before pushing**
 
 ### Example: Database Testing

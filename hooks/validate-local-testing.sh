@@ -128,8 +128,8 @@ Required services: $REQUIRED_SERVICES
 
 Required action:
 1. Start services: docker-compose up -d $REQUIRED_SERVICES
-2. Run integration tests: npm run test:integration
-3. Verify migrations: npm run migrate (if applicable)
+2. Run integration tests: pnpm test:integration
+3. Verify migrations: pnpm migrate (if applicable)
 4. Post testing evidence to issue #$ISSUE using format:
 
    <!-- LOCAL-TESTING:START -->
@@ -140,7 +140,7 @@ Required action:
    | postgres | ✅ Running | Migrations applied, queries executed |
 
    **Tests Run:**
-   - npm run test:integration - PASSED
+   - pnpm test:integration - PASSED
 
    **Tested At:** $(date -Iseconds)
    <!-- LOCAL-TESTING:END -->

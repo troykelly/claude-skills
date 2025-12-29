@@ -113,13 +113,13 @@ Before considering done:
 
 ```bash
 # Re-run linting
-npm run lint
+pnpm lint
 
 # Re-run tests
-npm test
+pnpm test
 
 # Re-run type check
-npm run typecheck
+pnpm typecheck
 ```
 
 All checks must pass.
@@ -231,16 +231,16 @@ After addressing all findings:
 
 ```bash
 # Linting
-npm run lint
+pnpm lint
 
 # Type checking
-npm run typecheck
+pnpm typecheck
 
 # Tests
-npm test
+pnpm test
 
 # Build
-npm run build
+pnpm build
 ```
 
 ### Review the Diff

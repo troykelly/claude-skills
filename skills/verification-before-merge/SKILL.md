@@ -62,10 +62,10 @@ gh pr checks [PR_NUMBER]
 docker-compose ps
 
 # Run integration tests against real services
-npm run test:integration
+pnpm test:integration
 
 # Verify migrations work
-npm run migrate
+pnpm migrate
 ```
 
 **If project has docker-compose services:**
@@ -82,10 +82,10 @@ npm run migrate
 
 ```bash
 # Verify locally (CI should have done this, but verify)
-npm test
+pnpm test
 
 # Check coverage
-npm test -- --coverage
+pnpm test --coverage
 ```
 
 **If failing:** Fix tests before merge.

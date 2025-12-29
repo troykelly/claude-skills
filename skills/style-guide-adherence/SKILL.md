@@ -244,11 +244,11 @@ repos:
     hooks:
       - id: format
         name: Format code
-        entry: npm run format
+        entry: pnpm format
         language: system
       - id: lint
         name: Lint code
-        entry: npm run lint
+        entry: pnpm lint
         language: system
 ```
 
@@ -276,13 +276,13 @@ Before committing:
 
 ```bash
 # Run formatter
-npm run format  # or black, gofmt, etc.
+pnpm format  # or black, gofmt, etc.
 
 # Run linter
-npm run lint    # or pylint, golangci-lint, etc.
+pnpm lint    # or pylint, golangci-lint, etc.
 
 # Fix auto-fixable issues
-npm run lint:fix
+pnpm lint:fix
 ```
 
 ## Checklist

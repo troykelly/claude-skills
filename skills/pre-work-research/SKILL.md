@@ -111,7 +111,7 @@ When using external APIs or libraries:
 
 ```bash
 # Read the docs for dependencies
-npm info [package-name]
+pnpm info [package-name]
 # Then visit documentation URL
 ```
 

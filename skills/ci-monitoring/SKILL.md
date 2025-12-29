@@ -128,10 +128,10 @@ Common failure types:
 
 ```bash
 # Reproduce locally
-npm test
+pnpm test
 
 # Run specific failing test
-npm test -- --grep "test name"
+pnpm test --grep "test name"
 
 # Fix the code or test
 # Commit and push
@@ -141,7 +141,7 @@ npm test -- --grep "test name"
 
 ```bash
 # Reproduce locally
-npm run build
+pnpm build
 
 # Fix compilation errors
 # Commit and push
@@ -151,10 +151,10 @@ npm run build
 
 ```bash
 # Check lint errors
-npm run lint
+pnpm lint
 
 # Auto-fix what's possible
-npm run lint:fix
+pnpm lint:fix
 
 # Manually fix remaining
 # Commit and push
@@ -164,7 +164,7 @@ npm run lint:fix
 
 ```bash
 # Check type errors
-npm run typecheck
+pnpm typecheck
 
 # Fix type issues
 # Commit and push
@@ -271,15 +271,15 @@ Before pushing, run EVERYTHING CI will run:
 
 ```bash
 # Run the same checks CI will run
-npm run lint
-npm run typecheck
-npm test              # Unit tests
-npm run test:integration  # Integration tests against real services
-npm run build
+pnpm lint
+pnpm typecheck
+pnpm test              # Unit tests
+pnpm test:integration  # Integration tests against real services
+pnpm build
 
 # If you have database changes
 docker-compose up -d postgres
-npm run migrate
+pnpm migrate
 ```
 
 **If your project has docker-compose services:**

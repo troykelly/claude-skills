@@ -122,16 +122,16 @@ Every commit must leave the codebase in a state where:
 
 ```bash
 # Run tests
-npm test
+pnpm test
 
 # Check build
-npm run build
+pnpm build
 
 # Check types
-npm run typecheck
+pnpm typecheck
 
 # Check lint
-npm run lint
+pnpm lint
 ```
 
 If any fail, fix before committing.
@@ -200,7 +200,7 @@ git commit
 git show --stat
 
 # Verify tests still pass
-npm test
+pnpm test
 ```
 
 ## Commit Message Body

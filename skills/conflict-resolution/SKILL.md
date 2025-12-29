@@ -197,7 +197,7 @@ The final file should have NO conflict markers.
 
 ```bash
 # TypeScript: Check types
-npm run typecheck
+pnpm typecheck
 
 # Or for specific file
 npx tsc --noEmit src/services/user.ts
@@ -207,10 +207,10 @@ npx tsc --noEmit src/services/user.ts
 
 ```bash
 # Run all tests
-npm test
+pnpm test
 
 # Run tests for affected area
-npm test -- --grep "user"
+pnpm test --grep "user"
 ```
 
 ### Visual Review
@@ -310,8 +310,8 @@ process(oldFormatData);  // No conflict marker, but broken!
 
 Resolution:
 1. Choose the appropriate version
-2. Delete `package-lock.json`
-3. Run `npm install`
+2. Delete `pnpm-lock.yaml`
+3. Run `pnpm install`
 4. Commit the new lock file
 
 ## Best Practices

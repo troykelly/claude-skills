@@ -124,7 +124,7 @@ Or in worktree:
 ## Commands to Run
 ```bash
 # Verify current state
-npm test
+pnpm test
 
 # Continue development
 [specific commands]
@@ -144,7 +144,7 @@ git status
 git log --oneline -10
 
 # Check test status
-npm test 2>&1 | tail -20
+pnpm test 2>&1 | tail -20
 
 # Count modified files
 git diff --name-only HEAD~[N]
@@ -217,7 +217,7 @@ git status
 git log --oneline -5
 
 # Run tests
-npm test
+pnpm test
 ```
 
 ### Step 3: Acknowledge Receipt
@@ -390,10 +390,10 @@ environment (jsdom). Need to mock or configure jsdom properly.
 ## Commands to Run
 ```bash
 # Run failing tests
-npm test -- --grep "ThemeContext"
+pnpm test --grep "ThemeContext"
 
 # Start dev server to see current state
-npm run dev
+pnpm dev
 ```
 
 ---

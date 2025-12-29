@@ -72,7 +72,7 @@ Check each category:
 - [ ] Default credentials removed
 
 #### A06: Vulnerable Components
-- [ ] `npm audit` / `pip audit` clean
+- [ ] `pnpm audit` / `pip audit` clean
 - [ ] No known CVEs in dependencies
 
 #### A07: Authentication Failures
@@ -112,7 +112,7 @@ grep -rn 'innerHTML\s*=' --include='*.ts' --include='*.tsx' .
 ### 5. Run Dependency Audit
 
 ```bash
-npm audit --production 2>/dev/null || true
+pnpm audit --prod 2>/dev/null || true
 ```
 
 ### 6. Report Findings

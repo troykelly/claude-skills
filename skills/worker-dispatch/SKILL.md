@@ -235,7 +235,7 @@ spawn_worker() {
 ### Review Worker (No Edits)
 
 ```bash
---allowedTools "Read,Grep,Glob,Bash(npm test:*),Bash(npm run lint:*)"
+--allowedTools "Read,Grep,Glob,Bash(pnpm test:*),Bash(pnpm lint:*)"
 ```
 
 ## Worker Registration

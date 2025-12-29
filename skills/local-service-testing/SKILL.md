@@ -120,10 +120,10 @@ redis-cli ping
 
 ```bash
 # Run integration tests (not unit tests with mocks)
-npm run test:integration
+pnpm test:integration
 
 # Or run specific integration test suite
-npm test -- --grep "integration"
+pnpm test --grep "integration"
 
 # For Python projects
 pytest tests/integration/
@@ -138,11 +138,11 @@ Before `git push`:
 
 ```bash
 # Full verification
-npm run build
-npm run lint
-npm run typecheck
-npm test              # Unit tests
-npm run test:integration  # Integration tests against real services
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test              # Unit tests
+pnpm test:integration  # Integration tests against real services
 ```
 
 ## Two-Layer Testing Requirement
@@ -198,7 +198,7 @@ Before creating a PR, you must post local testing evidence to the issue.
 | redis | ✅ Running | Cache operations verified |
 
 **Tests Run:**
-- `npm run test:integration` - PASSED
+- `pnpm test:integration` - PASSED
 - Manual verification of [specific feature]
 
 **Tested At:** 2025-01-15T10:30:00Z
@@ -294,7 +294,7 @@ describe('POST /users (integration)', () => {
 |---------|----------|
 | Service not starting | Check `docker-compose logs [service]` |
 | Connection refused | Ensure service is running and port is correct |
-| Database doesn't exist | Run migrations: `npm run migrate` |
+| Database doesn't exist | Run migrations: `pnpm migrate` |
 | Tests pass locally, fail in CI | Environment variable mismatch—check `.env` vs CI config |
 | Flaky integration tests | Check for proper test isolation and cleanup |
 

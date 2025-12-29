@@ -51,8 +51,7 @@ check_command "gh" || true
 echo ""
 echo "Checking optional tools..."
 check_optional "node" || true
-check_optional "npm" || true
-check_optional "npx" || true
+check_optional "pnpm" || true
 check_optional "uvx" || true
 
 # Check gh authentication

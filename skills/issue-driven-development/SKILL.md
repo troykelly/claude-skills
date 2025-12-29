@@ -150,7 +150,7 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 
 ---
 
-### Step 9: Code Review
+### Step 9: Code Review (MANDATORY GATE)
 
 **Question:** Minor change or major change?
 
@@ -172,20 +172,68 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 6. Documentation - Adequate docs?
 7. Style - Follows style guide?
 
-**Skills:** `review-scope`, `comprehensive-review`
+**Security-Sensitive Check:**
+
+```bash
+# Check if any changed files are security-sensitive
+git diff --name-only HEAD~1 | grep -E '(auth|security|middleware|api|password|token|secret|session|routes|\.sql)'
+```
+
+If matches found:
+1. Invoke `security-reviewer` subagent OR perform `security-review` skill
+2. Mark "Security-Sensitive: YES" in review artifact
+3. Include security findings in artifact
+
+**HARD REQUIREMENT:** Post review artifact to issue comment:
+
+```markdown
+<!-- REVIEW:START -->
+## Code Review Complete
+
+| Property | Value |
+|----------|-------|
+| Issue | #[ISSUE] |
+| Scope | [MINOR|MAJOR] |
+| Security-Sensitive | [YES|NO] |
+| Reviewed | [ISO_TIMESTAMP] |
+
+[... full artifact per comprehensive-review skill ...]
+
+**Review Status:** ✅ COMPLETE
+<!-- REVIEW:END -->
+```
+
+**Gate:** PR creation will be BLOCKED by hooks if artifact not found.
+
+**Skills:** `review-scope`, `comprehensive-review`, `security-review`, `review-gate`
 
 ---
 
-### Step 10: Implement Findings
+### Step 10: Implement Findings (ABSOLUTE REQUIREMENT)
 
 **Rule:** Implement ALL recommendations from code review, regardless how minor.
 
-**Actions:**
-- Address each finding
-- Re-run affected tests
-- Update documentation if needed
+**ABSOLUTE:** Every finding must result in ONE of:
+1. **Fixed in this PR** - Code changed, tests pass, verified
+2. **Tracking issue created** - Using `deferred-finding` skill
 
-**Skill:** `apply-all-findings`
+There is NO third option. "Won't fix without tracking" is NOT permitted.
+
+**Actions:**
+- Address each finding from review
+- For findings that cannot be fixed now:
+  1. Use `deferred-finding` skill to create tracking issue
+  2. Add `review-finding` and `spawned-from:#ISSUE` labels
+  3. Link tracking issue in review artifact
+- Re-run affected tests
+- Update review artifact to show:
+  - All FIXED findings marked ✅
+  - All DEFERRED findings with tracking issue #
+  - "Unaddressed: 0"
+
+**Gate:** Review artifact must show "Unaddressed: 0" before proceeding.
+
+**Skills:** `apply-all-findings`, `deferred-finding`
 
 ---
 
@@ -200,7 +248,13 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 
 ---
 
-### Step 12: Raise PR
+### Step 12: Raise PR (GATED)
+
+**Prerequisites (verified by hooks):**
+- Review artifact posted to issue (Step 9)
+- All findings addressed (Step 10) - "Unaddressed: 0"
+- Review status is COMPLETE
+- Full tests pass (Step 11)
 
 **Actions:**
 - Commit with descriptive message
@@ -208,10 +262,18 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 - Create PR with complete documentation:
   - Summary of changes
   - Link to issue
+  - Link to review artifact in issue
   - Verification report
   - Screenshots if UI changes
 
-**Skills:** `clean-commits`, `pr-creation`
+**CRITICAL:** The `PreToolUse` hook will BLOCK `gh pr create` if:
+- No review artifact found in issue comments
+- Review status is not COMPLETE
+- Unaddressed findings > 0
+
+If blocked, return to Step 9 or Step 10.
+
+**Skills:** `clean-commits`, `pr-creation`, `review-gate`
 
 ---
 
@@ -258,6 +320,11 @@ Work is complete when:
 - [ ] All acceptance criteria verified (PASS)
 - [ ] All tests pass
 - [ ] Build succeeds
+- [ ] Code review completed (comprehensive-review)
+- [ ] Security review completed (if security-sensitive files)
+- [ ] Review artifact posted to issue
+- [ ] All review findings addressed (Unaddressed: 0)
+- [ ] Deferred findings have tracking issues
 - [ ] PR created with complete documentation
 - [ ] CI is green
 - [ ] Issue status updated
@@ -275,8 +342,17 @@ Work is complete when:
 | 6 | branch-discipline | Must not be on main |
 | 7 | tdd-full-coverage, strict-typing, inline-documentation, inclusive-language, no-deferred-work | - |
 | 8 | acceptance-criteria-verification, research-after-failure | - |
-| 9 | review-scope, comprehensive-review | - |
-| 10 | apply-all-findings | - |
+| 9 | review-scope, comprehensive-review, security-review, review-gate | **Review artifact required** |
+| 10 | apply-all-findings, deferred-finding | **Unaddressed: 0 required** |
 | 11 | tdd-full-coverage | - |
-| 12 | clean-commits, pr-creation | - |
+| 12 | clean-commits, pr-creation, review-gate | **Hook blocks without artifact** |
 | 13 | ci-monitoring, verification-before-merge | Must be green |
+
+## Enforcement
+
+This process is enforced by:
+
+- **PreToolUse hook** on `gh pr create` - Blocks without review artifact
+- **PreToolUse hook** on `gh pr merge` - Verifies CI and review
+- **Stop hook** - Verifies review completion before session end
+- **Conditional rules** - Security-sensitive files trigger security review requirement

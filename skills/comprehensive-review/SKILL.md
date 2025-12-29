@@ -1,6 +1,6 @@
 ---
 name: comprehensive-review
-description: Use after implementing features - 7-criteria code review covering blindspots, clarity, maintainability, security, performance, documentation, and style
+description: Use after implementing features - 7-criteria code review with MANDATORY artifact posting to GitHub issue; blocks PR creation until complete
 ---
 
 # Comprehensive Review
@@ -11,7 +11,21 @@ Review code against 7 criteria before considering it complete.
 
 **Core principle:** Self-review catches issues before they reach others.
 
+**HARD REQUIREMENT:** Review artifact MUST be posted to the GitHub issue. This is enforced by hooks.
+
 **Announce at start:** "I'm performing a comprehensive code review."
+
+## Review Artifact Requirement
+
+**This is not optional.** Before a PR can be created:
+
+1. Complete review against all 7 criteria
+2. Document all findings
+3. Post artifact to issue comment using EXACT format below
+4. Address all findings (fix or defer with tracking issues)
+5. Update artifact to show "Unaddressed: 0"
+
+The `review-gate` skill and `PreToolUse` hook will BLOCK PR creation without this artifact.
 
 ## The 7 Criteria
 
@@ -55,24 +69,6 @@ function calculateAverage(items: number[]): number {
 | Patterns | Does this match existing patterns? |
 | Surprises | Would anything surprise a reader? |
 
-```typescript
-// Unclear
-function proc(d: any, f: boolean): any {
-  return f ? d.map((x: any) => x * 2) : d;
-}
-
-// Clear
-function doubleValuesIfEnabled(
-  values: number[],
-  shouldDouble: boolean
-): number[] {
-  if (!shouldDouble) {
-    return values;
-  }
-  return values.map(value => value * 2);
-}
-```
-
 ### 3. Maintainability
 
 **Question:** Can this be changed safely?
@@ -84,37 +80,6 @@ function doubleValuesIfEnabled(
 | Duplication | Is logic repeated anywhere? |
 | Tests | Do tests cover this adequately? |
 | Extensibility | Can new features be added easily? |
-
-```typescript
-// Hard to maintain: tightly coupled
-class OrderService {
-  async createOrder(data: OrderData): Promise<Order> {
-    const user = await db.query('SELECT * FROM users WHERE id = ?', [data.userId]);
-    const inventory = await db.query('SELECT * FROM inventory WHERE id = ?', [data.productId]);
-    await emailService.send(user.email, 'Order Created', orderTemplate(data));
-    await db.query('INSERT INTO orders ...', [...]);
-    return order;
-  }
-}
-
-// Maintainable: loosely coupled
-class OrderService {
-  constructor(
-    private userRepository: UserRepository,
-    private inventoryRepository: InventoryRepository,
-    private notificationService: NotificationService,
-    private orderRepository: OrderRepository
-  ) {}
-
-  async createOrder(data: OrderData): Promise<Order> {
-    const user = await this.userRepository.findById(data.userId);
-    const inventory = await this.inventoryRepository.check(data.productId);
-    const order = await this.orderRepository.create(data);
-    await this.notificationService.orderCreated(user, order);
-    return order;
-  }
-}
-```
 
 ### 4. Security Risks
 
@@ -129,27 +94,7 @@ class OrderService {
 | Injection | SQL, XSS, command injection possible? |
 | Dependencies | Are dependencies secure and updated? |
 
-```typescript
-// Security risk: SQL injection
-async function findUser(username: string): Promise<User> {
-  return db.query(`SELECT * FROM users WHERE username = '${username}'`);
-}
-
-// Secure: parameterized query
-async function findUser(username: string): Promise<User> {
-  return db.query('SELECT * FROM users WHERE username = ?', [username]);
-}
-
-// Security risk: XSS
-function renderComment(comment: string): string {
-  return `<div>${comment}</div>`;
-}
-
-// Secure: escaped output
-function renderComment(comment: string): string {
-  return `<div>${escapeHtml(comment)}</div>`;
-}
-```
+**NOTE:** If security-sensitive files are changed (auth, api, middleware, etc.), invoke `security-review` skill for deeper analysis.
 
 ### 5. Performance Implications
 
@@ -162,31 +107,6 @@ function renderComment(comment: string): string {
 | Memory | Large objects in memory? Memory leaks? |
 | Network | Unnecessary requests? Large payloads? |
 | Caching | Should results be cached? |
-
-```typescript
-// Performance issue: N+1 queries
-async function getOrdersWithUsers(orderIds: string[]): Promise<OrderWithUser[]> {
-  const orders = await orderRepository.findByIds(orderIds);
-  // N+1: One query per order!
-  return Promise.all(orders.map(async order => ({
-    ...order,
-    user: await userRepository.findById(order.userId),
-  })));
-}
-
-// Fixed: Batch query
-async function getOrdersWithUsers(orderIds: string[]): Promise<OrderWithUser[]> {
-  const orders = await orderRepository.findByIds(orderIds);
-  const userIds = [...new Set(orders.map(o => o.userId))];
-  const users = await userRepository.findByIds(userIds);
-  const userMap = new Map(users.map(u => [u.id, u]));
-
-  return orders.map(order => ({
-    ...order,
-    user: userMap.get(order.userId)!,
-  }));
-}
-```
 
 ### 6. Documentation
 
@@ -229,6 +149,10 @@ git diff --name-only HEAD~1
 
 # Get full diff
 git diff HEAD~1
+
+# Check for security-sensitive files
+git diff --name-only HEAD~1 | grep -E '(auth|security|middleware|api|password|token|secret)'
+# If matches found, security-review skill is MANDATORY
 ```
 
 ### Step 2: Review Each Criterion
@@ -239,7 +163,14 @@ For each of the 7 criteria:
 2. Note any issues found
 3. Determine severity (Critical/Major/Minor)
 
-### Step 3: Document Findings
+### Step 3: Check Security-Sensitive
+
+If ANY security-sensitive files were changed:
+1. Invoke `security-review` skill OR `security-reviewer` subagent
+2. Include security review results in artifact
+3. Mark "Security-Sensitive: YES" in artifact
+
+### Step 4: Document Findings
 
 ```markdown
 ## Code Review Findings
@@ -250,7 +181,6 @@ For each of the 7 criteria:
 
 ### 2. Clarity/Consistency
 - [ ] **Major**: Variable `x` should have descriptive name
-- [ ] **Minor**: Inconsistent spacing in `config.ts`
 
 ### 3. Maintainability
 - [x] No issues found
@@ -268,9 +198,72 @@ For each of the 7 criteria:
 - [x] Passes all checks
 ```
 
-### Step 4: Address All Findings
+### Step 5: Address All Findings
 
 Use `apply-all-findings` skill to address every issue.
+
+For findings that cannot be fixed:
+1. Use `deferred-finding` skill to create tracking issue
+2. Link tracking issue in artifact
+3. "Deferred without tracking issue" is NOT PERMITTED
+
+### Step 6: Post Artifact to Issue (MANDATORY)
+
+Post review artifact as comment on the GitHub issue:
+
+```bash
+ISSUE_NUMBER=123
+gh issue comment $ISSUE_NUMBER --body "$(cat <<'EOF'
+<!-- REVIEW:START -->
+## Code Review Complete
+
+| Property | Value |
+|----------|-------|
+| Worker | `[WORKER_ID]` |
+| Issue | #123 |
+| Scope | [MINOR|MAJOR] |
+| Security-Sensitive | [YES|NO] |
+| Reviewed | [ISO_TIMESTAMP] |
+
+### Criteria Results
+
+| # | Criterion | Status | Findings |
+|---|-----------|--------|----------|
+| 1 | Blindspots | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+| 2 | Clarity | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+| 3 | Maintainability | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+| 4 | Security | [✅ PASS|✅ FIXED|⚠️ DEFERRED|N/A] | [N] |
+| 5 | Performance | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+| 6 | Documentation | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+| 7 | Style | [✅ PASS|✅ FIXED|⚠️ DEFERRED] | [N] |
+
+### Findings Fixed in This PR
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| 1 | [SEVERITY] | [DESCRIPTION] | [HOW_FIXED] |
+
+### Findings Deferred (With Tracking Issues)
+
+| # | Severity | Finding | Tracking Issue | Justification |
+|---|----------|---------|----------------|---------------|
+| 1 | [SEVERITY] | [DESCRIPTION] | #[ISSUE] | [WHY] |
+
+### Summary
+
+| Category | Count |
+|----------|-------|
+| Fixed in PR | [N] |
+| Deferred (with tracking) | [N] |
+| Unaddressed | 0 |
+
+**Review Status:** ✅ COMPLETE
+<!-- REVIEW:END -->
+EOF
+)"
+```
+
+**CRITICAL:** "Unaddressed" MUST be 0. "Review Status" MUST be "COMPLETE".
 
 ## Severity Levels
 
@@ -287,12 +280,15 @@ Complete for every code review:
 - [ ] Blindspots: Edge cases, errors, concurrency checked
 - [ ] Clarity: Names, structure, complexity reviewed
 - [ ] Maintainability: Coupling, cohesion, tests evaluated
-- [ ] Security: Input, auth, injection, exposure checked
+- [ ] Security: Input, auth, injection, exposure checked (MANDATORY for sensitive files)
 - [ ] Performance: Algorithms, queries, memory reviewed
 - [ ] Documentation: Public APIs documented
 - [ ] Style: Conventions followed
 - [ ] All findings documented
-- [ ] All findings addressed
+- [ ] All findings addressed OR deferred with tracking issues
+- [ ] Review artifact posted to issue (exact format)
+- [ ] "Unaddressed: 0" in artifact
+- [ ] "Review Status: COMPLETE" in artifact
 
 ## Integration
 
@@ -302,6 +298,12 @@ This skill is called by:
 This skill uses:
 - `review-scope` - Determine review breadth
 - `apply-all-findings` - Address issues
+- `security-review` - For security-sensitive changes
+- `deferred-finding` - For creating tracking issues
+
+This skill is enforced by:
+- `review-gate` - Verifies artifact before PR
+- `PreToolUse` hook - Blocks PR without artifact
 
 This skill references:
 - `inline-documentation` - Documentation standards

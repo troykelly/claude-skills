@@ -1,18 +1,51 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "troykelly-skills",
   "owner": {
     "name": "Troy Kelly",
     "email": "troy@troykelly.com"
   },
+  "metadata": {
+    "description": "Opinionated development workflow plugins for autonomous, issue-driven software development",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "issue-driven-development",
-      "description": "Opinionated GitHub-native development workflow with 39 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, IPv6-first networking, comprehensive code review, and continuous issue tracking. Includes work planning and autonomous orchestration with parallel workers.",
       "source": "./",
+      "description": "Opinionated GitHub-native development workflow with 39 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, IPv6-first networking, comprehensive code review, and continuous issue tracking. Includes work planning and autonomous orchestration with parallel workers.",
       "version": "1.0.0",
+      "author": {
+        "name": "Troy Kelly",
+        "email": "troy@troykelly.com"
+      },
+      "homepage": "https://github.com/troykelly/claude-skills",
+      "repository": "https://github.com/troykelly/claude-skills.git",
+      "license": "MIT",
+      "keywords": [
+        "development",
+        "tdd",
+        "github",
+        "issue-tracking",
+        "code-review",
+        "autonomous",
+        "workflow",
+        "epic",
+        "milestone",
+        "initiative",
+        "work-planning"
+      ],
       "category": "development",
-      "tags": ["tdd", "github", "issue-tracking", "code-review", "autonomous", "workflow", "epic", "milestone", "initiative", "work-planning", "orchestration", "parallel-workers", "ci-monitoring"]
+      "tags": [
+        "tdd",
+        "github",
+        "issue-tracking",
+        "code-review",
+        "autonomous",
+        "workflow",
+        "orchestration",
+        "parallel-workers",
+        "ci-monitoring"
+      ]
     }
   ]
 }

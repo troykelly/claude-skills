@@ -195,6 +195,50 @@ When implementation fails after good-faith effort:
 *Worker: [WORKER_ID] | Triggering research cycle*
 ```
 
+## Review Gate (MANDATORY)
+
+**Before creating ANY PR, workers MUST:**
+
+1. Complete `comprehensive-review` skill (7 criteria)
+2. Post review artifact to issue comment (exact format required)
+3. Address ALL findings using `apply-all-findings` skill
+4. Verify "Unaddressed: 0" in artifact
+5. Update artifact status to "COMPLETE"
+
+**Review artifact format (machine-parseable):**
+
+```markdown
+<!-- REVIEW:START -->
+## Code Review Complete
+
+| Property | Value |
+|----------|-------|
+| Worker | `[WORKER_ID]` |
+| Issue | #[ISSUE] |
+| Reviewed | [TIMESTAMP] |
+
+[... full artifact per comprehensive-review skill ...]
+
+**Review Status:** ✅ COMPLETE
+<!-- REVIEW:END -->
+```
+
+**CRITICAL:** The `PreToolUse` hook will BLOCK `gh pr create` if:
+- No review artifact found in issue comments
+- Review status is not COMPLETE
+- Unaddressed findings > 0
+
+### Security-Sensitive Changes
+
+If worker modifies files matching security-sensitive patterns:
+- `**/auth/**`, `**/api/**`, `**/middleware/**`
+- `**/*password*`, `**/*token*`, `**/*secret*`
+
+Worker MUST:
+1. Invoke `security-reviewer` subagent OR perform `security-review` skill
+2. Include security review in artifact
+3. Mark "Security-Sensitive: YES" in artifact
+
 ## Behavioral Rules
 
 ### DO
@@ -204,6 +248,9 @@ When implementation fails after good-faith effort:
 - ✅ Commit frequently with descriptive messages
 - ✅ Update issue with progress comments
 - ✅ Test thoroughly before creating PR
+- ✅ Complete `comprehensive-review` before PR
+- ✅ Post review artifact to issue
+- ✅ Address ALL review findings (no exceptions)
 - ✅ Prepare handover if approaching turn limit
 - ✅ Exit cleanly when done
 
@@ -213,6 +260,9 @@ When implementation fails after good-faith effort:
 - ❌ Modify unrelated code
 - ❌ Skip tests to save turns
 - ❌ Create PR without passing tests
+- ❌ Create PR without review artifact
+- ❌ Leave review findings unaddressed
+- ❌ Defer findings without tracking issues
 - ❌ Ignore project standards
 - ❌ Continue past 100 turns
 - ❌ Delete or modify other workers' branches
@@ -249,6 +299,28 @@ feat: Add dark mode toggle to settings (#123)
 
 ## PR Creation
 
+**PREREQUISITE:** Review artifact MUST be posted to issue before PR creation.
+
+### Pre-PR Verification
+
+```bash
+# Verify review artifact exists in issue
+REVIEW_EXISTS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+  --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length')
+
+if [ "$REVIEW_EXISTS" = "0" ]; then
+  echo "ERROR: No review artifact found. Complete comprehensive-review first."
+  exit 1
+fi
+
+# Verify review is COMPLETE with 0 unaddressed
+REVIEW_STATUS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+  --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | last | .body' \
+  | grep -o "Review Status:.*" | head -1)
+
+echo "Review status: $REVIEW_STATUS"
+```
+
 ### PR Title Format
 
 ```
@@ -273,6 +345,11 @@ Closes #[ISSUE]
 - [ ] Integration tests passing
 - [ ] Manual testing completed
 
+## Code Review
+- [x] Review artifact posted to issue
+- [x] All findings addressed
+- [x] Review status: COMPLETE
+
 ## Checklist
 - [ ] Code follows project style
 - [ ] Types are complete (no `any`)
@@ -284,6 +361,7 @@ Closes #[ISSUE]
 Worker: `[WORKER_ID]`
 Orchestration: `[ORCHESTRATION_ID]`
 Attempt: [N]
+Review: See issue #[ISSUE] for review artifact
 ```
 
 ## Worktree Awareness
@@ -372,3 +450,12 @@ This protocol requires workers to follow:
 - `tdd-full-coverage` - Testing approach
 - `clean-commits` - Commit standards
 - `worker-handover` - Handover format
+- `comprehensive-review` - Code review (MANDATORY before PR)
+- `apply-all-findings` - Address all findings
+- `security-review` - For security-sensitive files
+- `deferred-finding` - For tracking deferred findings
+- `review-gate` - PR creation gate
+
+This protocol is enforced by:
+- `PreToolUse` hook on `gh pr create` - Blocks without review artifact
+- `Stop` hook - Verifies review completion before session end

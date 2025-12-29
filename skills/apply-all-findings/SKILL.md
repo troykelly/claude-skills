@@ -1,17 +1,23 @@
 ---
 name: apply-all-findings
-description: Use after code review - implement ALL recommendations regardless of severity; no finding is too minor to address
+description: Use after code review - implement ALL findings; any finding not fixed MUST have tracking issue created; no finding disappears without trace
 ---
 
 # Apply All Findings
 
 ## Overview
 
-Implement EVERY finding from code review. No exceptions for "minor" issues.
+Address EVERY finding from code review. Findings are either FIXED or DEFERRED with tracking issues.
 
 **Core principle:** Minor issues accumulate into major problems.
 
-**The rule:** If it was worth noting, it's worth fixing.
+**The rule:** If it was worth noting, it's worth tracking.
+
+**ABSOLUTE REQUIREMENT:** Every finding results in ONE of:
+1. **Fixed in this PR** (verified)
+2. **Tracking issue created** (linked in review artifact)
+
+There is NO third option. "Won't fix without tracking" is NOT permitted.
 
 ## Why All Findings
 
@@ -72,12 +78,34 @@ Every finding becomes a todo:
 
 ### Step 3: Address Systematically
 
-Work through the list:
+Work through the list. For each finding:
+
+#### If Fixable:
 
 1. Fix the issue
 2. Verify the fix
 3. Check off the item
-4. Move to next
+4. Move to next finding
+
+#### If Not Fixable in This PR:
+
+1. Verify valid deferral reason (see `deferred-finding` skill)
+2. Create tracking issue with full documentation
+3. Add tracking issue to review artifact
+4. Mark as DEFERRED (not unaddressed)
+5. Move to next finding
+
+```bash
+# Create tracking issue for deferred finding
+gh issue create \
+  --title "[Finding] [Description] (from #123)" \
+  --label "review-finding,depth:1" \
+  --body "[Full deferred-finding template]"
+
+# Create spawned-from label if needed
+gh label create "spawned-from:#123" --color "C2E0C6" 2>/dev/null || true
+gh issue edit [NEW_ISSUE] --add-label "spawned-from:#123"
+```
 
 ### Step 4: Verify All Complete
 
@@ -95,6 +123,15 @@ npm run typecheck
 ```
 
 All checks must pass.
+
+### Step 5: Update Review Artifact
+
+After all findings addressed, update artifact in issue comment:
+
+1. All FIXED findings marked ✅ FIXED
+2. All DEFERRED findings have tracking issue # linked
+3. "Unaddressed: 0" in summary
+4. "Review Status: COMPLETE"
 
 ## Addressing by Type
 
@@ -152,61 +189,39 @@ const name = 'Alice';
 const greeting = 'Hello';
 ```
 
-### Minor: Comments
+## Handling Deferrals
 
-```typescript
-// Finding: Outdated comment
-// Before
-// TODO: Implement error handling
-try {
-  await save(data);
-} catch (error) {
-  throw new SaveError('Failed to save', { cause: error });
-}
+### Valid Deferral Reasons
 
-// After (remove outdated TODO, error handling exists)
-try {
-  await save(data);
-} catch (error) {
-  throw new SaveError('Failed to save', { cause: error });
-}
+| Reason | Example | Requires |
+|--------|---------|----------|
+| Out of scope | Architectural change | Tracking issue |
+| External dependency | Infrastructure change | Tracking issue |
+| Breaking change | Major version bump | Tracking issue |
+| Separate concern | Independent feature | Tracking issue |
+
+### NOT Valid Deferral Reasons
+
+| Excuse | Reality | Action |
+|--------|---------|--------|
+| "It's minor" | Minor compounds | Fix now |
+| "Takes too long" | Debt takes longer | Fix now |
+| "Good enough" | Never enough | Fix now |
+| "Not important" | Then why note it? | Fix now |
+| "Do it later" | Without tracking? No. | Fix or create issue |
+
+### Deferral MUST Create Issue
+
+**ABSOLUTE:** No deferral without tracking issue.
+
+```bash
+# WRONG - Deferred without tracking
+"We'll fix the SQL injection later"  # NO
+
+# RIGHT - Deferred with tracking
+gh issue create --title "[Finding] SQL injection in findUser (from #123)" ...
+# Then link #456 in review artifact
 ```
-
-## Handling "Won't Fix"
-
-Very rarely, a finding truly can't be fixed:
-
-### Legitimate Cases
-
-| Case | Example |
-|------|---------|
-| External constraint | Third-party API requires this format |
-| Intentional design | Performance trade-off documented |
-| Breaking change scope | Would require major version bump |
-
-### Process for Won't Fix
-
-1. **Document why** it can't be fixed
-2. **Get explicit approval** from human partner
-3. **Create issue** for future resolution if applicable
-4. **Add code comment** explaining the situation
-
-```typescript
-// KNOWN ISSUE: Using deprecated API due to external constraint.
-// See issue #789 for planned migration when dependency updates.
-// Approved by @maintainer on 2024-12-01.
-const result = deprecatedMethod(data);
-```
-
-### Not Acceptable as "Won't Fix"
-
-| Excuse | Response |
-|--------|----------|
-| "It's just style" | Style matters. Fix it. |
-| "It's too minor" | Minor is still worth fixing. |
-| "It works fine" | "Works" isn't "correct". |
-| "Nobody will notice" | Future you will notice. |
-| "Takes too long" | Technical debt takes longer. |
 
 ## Verification
 
@@ -250,16 +265,19 @@ Before moving on from review:
 - [ ] All critical findings addressed
 - [ ] All major findings addressed
 - [ ] All minor findings addressed
-- [ ] Any "won't fix" has documented approval
+- [ ] Any deferred finding has tracking issue created
+- [ ] Tracking issues linked in review artifact
 - [ ] All automated checks pass
 - [ ] Fixes reviewed for correctness
 - [ ] No new issues introduced
+- [ ] Review artifact updated with final status
+- [ ] "Unaddressed: 0" confirmed
 
 ## Common Pushback (Rejected)
 
 | Pushback | Response |
 |----------|----------|
-| "We can fix minors later" | Later never comes. Now. |
+| "We can fix minors later" | Without tracking? No. Create issue or fix now. |
 | "This is slowing us down" | Debt slows you down more. |
 | "It's not important" | Then why was it noted? |
 | "Good enough" | Good enough is never enough. |
@@ -273,7 +291,11 @@ This skill is called by:
 This skill follows:
 - `comprehensive-review` - Generates the findings
 
+This skill uses:
+- `deferred-finding` - For creating tracking issues
+
 This skill ensures:
 - No accumulated minor issues
 - Consistent quality standards
 - Complete reviews, not partial
+- All deferrals tracked in GitHub

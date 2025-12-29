@@ -38,6 +38,36 @@ echo $GITHUB_PROJECT
 
 ---
 
+### Step 1.5: Development Services
+
+Check for available development services (docker-compose).
+
+```bash
+# Detect compose services
+if [ -f "docker-compose.yml" ] || [ -f ".devcontainer/docker-compose.yml" ]; then
+    docker-compose config --services
+    docker-compose ps
+fi
+```
+
+**Key questions:**
+- What services are available (postgres, redis, etc.)?
+- Which are currently running?
+- Do any need to be started for this work?
+
+**If services are available but not running:**
+```bash
+# Start all services
+docker-compose up -d
+
+# Or start specific service
+docker-compose up -d postgres
+```
+
+**Skill:** `local-service-testing`
+
+---
+
 ### Step 2: Repository State
 
 Understand the current state of the repository.
@@ -158,6 +188,11 @@ Summarize current state to user:
 - [tool versions]
 - [any issues detected]
 
+**Development Services:**
+- postgres: [running/stopped] @ localhost:5432
+- redis: [running/stopped] @ localhost:6379
+- [other services from docker-compose]
+
 **Ready to:** [resume work on X / start new issue / await instructions]
 ```
 
@@ -228,11 +263,13 @@ If no work in progress:
 Before proceeding to work:
 
 - [ ] Environment verified (gh, git, env vars)
+- [ ] Development services detected and status reported
 - [ ] Repository state understood
 - [ ] GitHub Project state checked
 - [ ] Memory searched for context
 - [ ] Active work detected or new work identified
 - [ ] Environment bootstrapped if needed
+- [ ] Required services started (if applicable)
 - [ ] State reported to user
 
 ## Integration

@@ -119,7 +119,36 @@ else
 fi
 echo ""
 
-# Step 6: Start development server (optional)
+# Step 6: Start development services (if docker-compose exists)
+if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
+    echo "Starting development services..."
+    docker-compose up -d
+
+    echo "Waiting for services to be ready..."
+    sleep 5
+
+    # Verify postgres (if defined)
+    if docker-compose config --services 2>/dev/null | grep -q "postgres"; then
+        if docker-compose ps postgres 2>/dev/null | grep -q "Up"; then
+            echo -e "${GREEN}✓${NC} postgres ready"
+        else
+            echo -e "${RED}✗${NC} postgres failed to start"
+        fi
+    fi
+
+    # Verify redis (if defined)
+    if docker-compose config --services 2>/dev/null | grep -q "redis"; then
+        if docker-compose ps redis 2>/dev/null | grep -q "Up"; then
+            echo -e "${GREEN}✓${NC} redis ready"
+        else
+            echo -e "${RED}✗${NC} redis failed to start"
+        fi
+    fi
+
+    echo ""
+fi
+
+# Step 7: Start development server (optional)
 if [ "${START_DEV_SERVER:-false}" = "true" ]; then
     echo "Starting development server..."
     npm run dev &
@@ -318,6 +347,8 @@ Init script should:
 - [ ] Set up environment files
 - [ ] Run build
 - [ ] Run tests
+- [ ] Start development services (if docker-compose exists)
+- [ ] Verify services are ready (postgres, redis, etc.)
 - [ ] Optionally start dev server
 - [ ] Verify server responds (if started)
 - [ ] Print clear success/failure

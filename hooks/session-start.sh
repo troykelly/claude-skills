@@ -105,6 +105,68 @@ else
     echo -e "  ${YELLOW}!${NC} npx not available"
 fi
 
+# Check development services (docker-compose)
+echo ""
+echo "Checking development services..."
+
+COMPOSE_FILE=""
+if [ -f "docker-compose.yml" ]; then
+    COMPOSE_FILE="docker-compose.yml"
+elif [ -f "docker-compose.yaml" ]; then
+    COMPOSE_FILE="docker-compose.yaml"
+elif [ -f ".devcontainer/docker-compose.yml" ]; then
+    COMPOSE_FILE=".devcontainer/docker-compose.yml"
+elif [ -f ".devcontainer/docker-compose.yaml" ]; then
+    COMPOSE_FILE=".devcontainer/docker-compose.yaml"
+fi
+
+if [ -n "$COMPOSE_FILE" ]; then
+    echo -e "  ${GREEN}✓${NC} Found $COMPOSE_FILE"
+
+    if command -v docker-compose &> /dev/null; then
+        # List services and their status
+        SERVICES=$(docker-compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "")
+
+        if [ -n "$SERVICES" ]; then
+            echo ""
+            echo "  Available services:"
+            for service in $SERVICES; do
+                if docker-compose -f "$COMPOSE_FILE" ps "$service" 2>/dev/null | grep -q "Up"; then
+                    echo -e "    ${GREEN}✓${NC} $service (running)"
+                else
+                    echo -e "    ${YELLOW}○${NC} $service (not running)"
+                    WARNINGS+=("Service '$service' is available but not running - run 'docker-compose up -d $service'")
+                fi
+            done
+            echo ""
+            echo -e "  ${BLUE}Tip:${NC} Start services with: docker-compose -f $COMPOSE_FILE up -d"
+        fi
+    elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+        # Try docker compose (v2) instead
+        SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "")
+
+        if [ -n "$SERVICES" ]; then
+            echo ""
+            echo "  Available services:"
+            for service in $SERVICES; do
+                if docker compose -f "$COMPOSE_FILE" ps "$service" 2>/dev/null | grep -q "running"; then
+                    echo -e "    ${GREEN}✓${NC} $service (running)"
+                else
+                    echo -e "    ${YELLOW}○${NC} $service (not running)"
+                    WARNINGS+=("Service '$service' is available but not running - run 'docker compose up -d $service'")
+                fi
+            done
+            echo ""
+            echo -e "  ${BLUE}Tip:${NC} Start services with: docker compose -f $COMPOSE_FILE up -d"
+        fi
+    else
+        WARNINGS+=("docker-compose not available - cannot check service status")
+        echo -e "  ${YELLOW}!${NC} docker-compose not available"
+    fi
+else
+    echo -e "  ${YELLOW}○${NC} No docker-compose.yml found (no local services)"
+fi
+
 # Summary
 echo ""
 echo -e "${BLUE}[issue-driven-development]${NC} Environment check complete"

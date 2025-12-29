@@ -22,6 +22,7 @@ All must be GREEN to merge:
 │                  MERGE GATES                         │
 ├──────────────────────────────────────────────────────┤
 │  [ ] CI Pipeline Green                               │
+│  [ ] Local Integration Tests Pass (if services)     │
 │  [ ] All Tests Pass                                  │
 │  [ ] Code Review Approved                            │
 │  [ ] Acceptance Criteria Verified                    │
@@ -51,6 +52,31 @@ gh pr checks [PR_NUMBER]
 ```
 
 **If not green:** Use `ci-monitoring` to resolve.
+
+### 1.5. Local Integration Tests Pass
+
+**CRITICAL:** CI should validate, not discover. If CI found bugs, local testing was insufficient.
+
+```bash
+# Verify services are running (if project has docker-compose)
+docker-compose ps
+
+# Run integration tests against real services
+npm run test:integration
+
+# Verify migrations work
+npm run migrate
+```
+
+**If project has docker-compose services:**
+- Services MUST be running locally
+- Integration tests MUST pass against real services
+- Migrations MUST apply successfully
+- NOT acceptable: "unit tests with mocks pass, I'll let CI verify the real services"
+
+**Local testing evidence must be posted to issue before PR creation.**
+
+**Skill:** `local-service-testing`
 
 ### 2. All Tests Pass
 
@@ -309,6 +335,8 @@ Cannot merge: Unresolved review threads
 Final verification before clicking merge:
 
 - [ ] All CI checks green
+- [ ] Local integration tests pass (if services available)
+- [ ] Local testing artifact posted to issue (if services used)
 - [ ] All tests passing
 - [ ] PR approved
 - [ ] All conversations resolved

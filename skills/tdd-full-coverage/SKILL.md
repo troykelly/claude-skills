@@ -161,6 +161,86 @@ module.exports = {
 };
 ```
 
+## Integration Testing Against Local Services
+
+**Core principle:** Unit tests with mocks are necessary but not sufficient. You MUST ALSO test against real services.
+
+### The Two-Layer Testing Requirement
+
+| Layer | Purpose | Uses Mocks? | Uses Real Services? |
+|-------|---------|-------------|---------------------|
+| **Unit Tests (TDD)** | Verify logic, enable RED-GREEN-REFACTOR | **YES** | No |
+| **Integration Tests** | Verify real service behavior | No | **YES** |
+
+**Both layers are REQUIRED.** Unit tests alone miss real-world failures. Integration tests alone are too slow for TDD.
+
+### The Problem We're Solving
+
+We've experienced **80% failure rates** with ORM migrations because:
+- Unit tests with mocks pass
+- Real database rejects the migration
+- CI discovers the bug instead of local testing
+
+**Mocks don't catch:** Schema mismatches, constraint violations, migration failures, connection issues, transaction behavior.
+
+### When Integration Tests Are Required
+
+| Code Change | Unit Tests (with mocks) | Integration Tests (with real services) |
+|-------------|-------------------------|----------------------------------------|
+| Database model/migration | ✅ Required | ✅ **Also required** |
+| Repository/ORM layer | ✅ Required | ✅ **Also required** |
+| Cache operations | ✅ Required | ✅ **Also required** |
+| Pub/sub messages | ✅ Required | ✅ **Also required** |
+| Queue workers | ✅ Required | ✅ **Also required** |
+
+### Local Service Testing Protocol
+
+After completing TDD cycle (unit tests with mocks):
+
+1. **Ensure services are running** (`docker-compose up -d`)
+2. **Run integration tests against real services**
+3. **Verify migrations apply** (`npm run migrate`)
+4. **Verify in local environment before pushing**
+
+### Example: Database Testing
+
+```typescript
+// LAYER 1: Unit tests with mocks (TDD cycle)
+describe('UserRepository (unit)', () => {
+  const mockDb = { query: jest.fn() };
+
+  it('calls correct SQL for findById', async () => {
+    mockDb.query.mockResolvedValue([{ id: 1, email: 'test@example.com' }]);
+    const user = await userRepo.findById(1);
+    expect(mockDb.query).toHaveBeenCalledWith('SELECT * FROM users WHERE id = $1', [1]);
+  });
+});
+
+// LAYER 2: Integration tests with real postgres (ALSO required)
+describe('UserRepository (integration)', () => {
+  beforeAll(async () => {
+    await db.migrate.latest();
+  });
+
+  it('actually persists and retrieves users', async () => {
+    await userRepo.create({ email: 'test@example.com' });
+    const user = await userRepo.findByEmail('test@example.com');
+    expect(user).toBeDefined();
+    expect(user.email).toBe('test@example.com');
+  });
+
+  it('enforces unique email constraint', async () => {
+    await userRepo.create({ email: 'unique@example.com' });
+    // Real postgres will throw - mocks won't catch this
+    await expect(
+      userRepo.create({ email: 'unique@example.com' })
+    ).rejects.toThrow(/unique constraint/);
+  });
+});
+```
+
+**Skill:** `local-service-testing`
+
 ## Test Quality
 
 ### Good Tests
@@ -292,6 +372,8 @@ Before completing a feature:
 - [ ] No skipped tests
 - [ ] Tests are isolated (no order dependency)
 - [ ] Error cases are tested
+- [ ] Integration tests ran against local services (not mocks)
+- [ ] All service-dependent code verified locally
 
 ## Integration
 

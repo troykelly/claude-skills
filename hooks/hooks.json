@@ -23,6 +23,11 @@
           },
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-local-testing.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-merge.sh",
             "timeout": 30
           }

@@ -9,7 +9,19 @@ description: Use after creating PR - monitor CI pipeline, resolve failures cycli
 
 Monitor CI pipeline and resolve failures until green.
 
-**Core principle:** CI failures are blockers. Resolve them before proceeding.
+**CRITICAL: CI is validation, not discovery.**
+
+> **If CI finds a bug you didn't find locally, your local testing was insufficient.**
+>
+> Before blaming CI, ask yourself:
+> 1. Did you run all tests locally?
+> 2. Did you test against local services (postgres, redis)?
+> 3. Did you run the same checks CI runs?
+> 4. Did you run integration tests, not just unit tests with mocks?
+>
+> CI should only fail for: environment differences, flaky tests, or infrastructure issues—never for bugs you could have caught locally.
+
+**Core principle:** CI failures are blockers. But they should never be surprises.
 
 **Announce at start:** "I'm monitoring CI and will resolve any failures."
 
@@ -251,17 +263,32 @@ If the failure is from your code, it must be fixed.
 
 ## CI Best Practices
 
-### Run Locally First
+### Run Locally First (MANDATORY)
 
-Before pushing:
+**CI is the last resort, not the first check.**
+
+Before pushing, run EVERYTHING CI will run:
 
 ```bash
 # Run the same checks CI will run
 npm run lint
 npm run typecheck
-npm test
+npm test              # Unit tests
+npm run test:integration  # Integration tests against real services
 npm run build
+
+# If you have database changes
+docker-compose up -d postgres
+npm run migrate
 ```
+
+**If your project has docker-compose services:**
+- Start them before testing: `docker-compose up -d`
+- Run integration tests against real services
+- Verify migrations apply to real database
+- Don't rely on mocks alone
+
+**Skill:** `local-service-testing`
 
 ### Commit Incrementally
 

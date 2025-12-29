@@ -2,7 +2,7 @@
 name: security-reviewer
 description: PROACTIVELY review security-sensitive code. MANDATORY for changes to auth, input handling, API endpoints, database queries, or credential handling. Read-only analysis with OWASP checklist.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 permissionMode: plan
 ---
 

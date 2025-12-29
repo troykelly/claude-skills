@@ -2,7 +2,7 @@
 name: code-reviewer
 description: MUST BE USED after implementing code changes. Performs comprehensive 7-criteria code review and posts mandatory review artifact to GitHub issue. Invoke proactively before any PR creation.
 tools: Read, Grep, Glob, Bash, mcp__github__add_issue_comment, mcp__github__get_issue
-model: sonnet
+model: opus
 permissionMode: default
 ---
 

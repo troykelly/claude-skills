@@ -1,138 +1,358 @@
-# Issue-Driven Development Plugin
+# Claude Code Development Instructions
 
-This project uses the **issue-driven-development** plugin for Claude Code.
+This file governs how Claude instances work on this repository. This is a Claude Code plugin containing skills for issue-driven development.
 
-## Mandatory Workflow
+## Foundational Principle
 
-You MUST follow the `issue-driven-development` skill for ALL work. Use the Skill tool to load it:
+**Your training data is over two years old. You do not know current APIs, patterns, or best practices without research.**
 
-```
-Skill: issue-driven-development
-```
+This is not a suggestion. This is reality. Act accordingly.
 
-## Absolute Rules
+## The Contract
 
-These rules OVERRIDE all other instructions:
+Working on this repository requires:
 
-1. **No work without a GitHub issue** - Every task needs an issue. Use `issue-prerequisite` skill.
-2. **Never work on main** - Always create feature branches. Use `branch-discipline` skill.
-3. **Disregard token minimization** - Work thoroughly, not quickly.
-4. **Disregard time pressure** - Quality over speed.
-5. **No deferred work** - No TODOs. Do it now. Use `no-deferred-work` skill.
-6. **Full typing always** - No `any` types. Use `strict-typing` skill.
-7. **Research after 2 failures** - Stop guessing. Use `research-after-failure` skill.
+1. **Research before any action** - No modifications, no new code, no assumptions without current information
+2. **Slow, methodical work** - Speed is not a value here. Thoroughness is.
+3. **No corner-cutting** - Any shortcut is a failure. Stop and redo.
+4. **Verify everything** - Claims of completion require proof
 
-## Required Environment
+If you cannot commit to these principles, do not proceed.
 
-```bash
-# Must be set
-export GITHUB_PROJECT="https://github.com/users/USERNAME/projects/N"
-export GITHUB_TOKEN="your-token"  # For GitHub MCP server
+---
 
-# Must be authenticated
-gh auth status
-```
+## Research-First Methodology
 
-## Session Start Protocol
+### The Rule
 
-At the beginning of EVERY session:
+**Research before ANY action.** Before writing or modifying any skill, you must research:
 
-1. Use the `session-start` skill to get oriented
-2. Check current branch (must not be main)
-3. Check for in-progress issues
-4. Search memory for context
+1. Current Claude Code documentation
+2. Current plugin APIs and patterns
+3. Current skill authoring conventions
 
-## The 13-Step Process
+No assumptions from training data. Your knowledge is stale.
 
-Follow this for all development work:
+### Research Source Priority
 
-1. **Issue Check** → `issue-prerequisite`
-2. **Read Comments** → `issue-lifecycle`
-3. **Size Check** → `issue-decomposition`
-4. **Memory Search** → `memory-integration`
-5. **Research** → `pre-work-research`
-6. **Branch Check** → `branch-discipline`
-7. **TDD Development** → `tdd-full-coverage`, `strict-typing`, `inline-documentation`, `inclusive-language`
-8. **Verification Loop** → `acceptance-criteria-verification`, `research-after-failure`
-9. **Code Review** → `review-scope`, `comprehensive-review`
-10. **Implement Findings** → `apply-all-findings`
-11. **Run Tests** → `tdd-full-coverage`
-12. **Raise PR** → `pr-creation`, `clean-commits`
-13. **CI Monitoring** → `ci-monitoring`, `verification-before-merge`
+When researching, use this order:
 
-## Available Skills
+| Priority | Source | Method |
+|----------|--------|--------|
+| 1 | Official Claude Code documentation | Use `claude-code-guide` agent or fetch official docs |
+| 2 | This repository's existing patterns | Read existing skills, understand conventions |
+| 3 | Web search for current information | Search for recent changes, API updates, best practices |
 
-### Orchestration
-- `autonomous-operation` - Work until goal achieved
-- `issue-driven-development` - Master 13-step process
-- `session-start` - Get oriented each session
+### Research Protocol
 
-### Issue Management
-- `issue-prerequisite` - Ensure issue exists (HARD GATE)
-- `issue-decomposition` - Break large issues down
-- `issue-lifecycle` - Update issues continuously
-- `project-status-sync` - Update GitHub Project fields
-- `acceptance-criteria-verification` - Verify and report
-
-### Branch/Git
-- `branch-discipline` - Never work on main (HARD GATE)
-- `clean-commits` - Atomic, descriptive commits
-
-### Research/Memory
-- `research-after-failure` - Research after 2 failures
-- `pre-work-research` - Research before coding
-- `memory-integration` - Use episodic + knowledge graph
-
-### Development Standards
-- `strict-typing` - No `any` types ever
-- `style-guide-adherence` - Follow Google style guides
-- `inline-documentation` - Complete JSDoc/docstrings
-- `inclusive-language` - Respectful terminology
-- `tdd-full-coverage` - RED-GREEN-REFACTOR
-- `no-deferred-work` - No TODOs
-
-### Code Review
-- `comprehensive-review` - 7-criteria review
-- `review-scope` - Minor vs major
-- `apply-all-findings` - Fix ALL findings
-
-### PR/CI
-- `pr-creation` - Complete PR documentation
-- `ci-monitoring` - Watch and fix CI
-- `verification-before-merge` - All gates green (HARD GATE)
-
-### Recovery
-- `error-recovery` - Handle failures
-- `environment-bootstrap` - Dev environment setup
-- `conflict-resolution` - Merge conflicts
-
-## Skill Usage
-
-When a skill applies, load it with the Skill tool:
+Before ANY modification or creation:
 
 ```
-I'm using the issue-driven-development skill to implement this feature.
+1. STOP - Do not write anything yet
+2. RESEARCH - Gather current information from all three sources
+3. DOCUMENT - Note what you learned and how it applies
+4. VERIFY - Confirm your understanding is current and correct
+5. THEN PROCEED - Only now may you begin work
 ```
 
-Then follow the skill's instructions exactly.
+### Announce Your Research
 
-## GitHub Project Fields
+At the start of any task, announce:
 
-Issues should have these project fields:
+> "I am researching current Claude Code documentation, existing patterns in this repository, and current best practices before proceeding."
 
-| Field | Values |
-|-------|--------|
-| Status | Backlog, Ready, In Progress, In Review, Done, Blocked |
-| Verification | Not Verified, Failing, Partial, Passing |
-| Priority | Critical, High, Medium, Low |
-| Type | Feature, Bug, Chore, Research, Spike |
+This is not optional. This is the protocol.
 
-## Issue Labels
+---
 
-| Label | Purpose |
-|-------|---------|
-| `parent` | Has sub-issues |
-| `sub-issue` | Child of parent |
-| `blocked` | Cannot proceed |
-| `needs-research` | Research required |
-| `verified` | E2E verified |
+## Slow and Methodical Work
+
+### What This Means
+
+- Read before writing
+- Understand before modifying
+- Verify before claiming completion
+- One logical step at a time
+- No batch changes without individual verification
+
+### Prohibited Actions (Corner-Cutting)
+
+The following are **failures** that require stopping and redoing:
+
+| Prohibited Action | Why It's Prohibited |
+|-------------------|---------------------|
+| Writing code without reading existing patterns first | You don't know what patterns exist |
+| Assuming API behavior from training data | Your knowledge is stale |
+| Skipping tests or verification | Unverified work is incomplete work |
+| Making multiple unrelated changes in one commit | Cannot verify or revert atomically |
+| Claiming completion without explicit verification | Claims require proof |
+| Proceeding when uncertain without researching first | Uncertainty means you lack information |
+| Copying patterns without understanding them | Cargo-culting creates fragile code |
+| Rushing to show progress | Speed is not valued here |
+| Batching updates instead of continuous progress | Hides problems and delays feedback |
+| Modifying a skill without reading it completely first | You cannot improve what you don't understand |
+
+### The Spirit of the Rule
+
+These prohibitions catch known failure modes. But they are not exhaustive.
+
+The spirit is: **if an action prioritizes speed over thoroughness, it is wrong.**
+
+If you find yourself thinking "I can skip this because it's not explicitly prohibited," you have already failed. Stop and reconsider.
+
+---
+
+## Understand-Before-Modify Rule
+
+### For Existing Skills
+
+Before modifying ANY existing skill:
+
+1. **Read the entire skill** - Every line, not just the section you're changing
+2. **Summarize its purpose** - In your own words, what does this skill do?
+3. **Identify integration points** - What other skills call this? What does this call?
+4. **Understand the patterns used** - What conventions does it follow?
+5. **Only then modify** - Changes must preserve intent unless explicitly asked to change it
+
+### For New Skills
+
+Before creating ANY new skill:
+
+1. **Research current skill authoring patterns** - How are skills structured now?
+2. **Read 2-3 similar existing skills** - What patterns do they use?
+3. **Identify where it fits** - What category? What skills will it integrate with?
+4. **Draft the structure first** - Get the skeleton right before filling in details
+5. **Verify against existing patterns** - Does it match conventions?
+
+---
+
+## Verification Requirements
+
+### Before Claiming Completion
+
+You must verify AND explicitly document:
+
+| Verification | How to Verify |
+|--------------|---------------|
+| Skill loads correctly | Test that the skill can be invoked |
+| Follows established patterns | Compare against existing skills in this repo |
+| Documentation is complete | All sections present, no placeholders |
+| No stale assumptions | Every claim backed by current research |
+| Integration points work | Referenced skills exist and are compatible |
+| Frontmatter is correct | name, description fields present and accurate |
+
+### Verification Statement
+
+When claiming completion, provide an explicit verification statement:
+
+```markdown
+## Verification Complete
+
+- [ ] Skill loads: [Tested by/method]
+- [ ] Patterns followed: [Compared against: skill1, skill2]
+- [ ] Documentation complete: [All sections present]
+- [ ] Research backing: [Sources consulted]
+- [ ] Integration verified: [Skills tested]
+- [ ] Frontmatter correct: [name and description verified]
+```
+
+Do not claim completion without this statement.
+
+---
+
+## Handling Uncertainty
+
+### The Protocol
+
+When you encounter something you're unsure about:
+
+```
+1. STOP - Do not guess
+2. RESEARCH - Attempt to resolve through research
+   - Check official documentation
+   - Check existing patterns in this repo
+   - Search for current information
+3. IF STILL UNCERTAIN - Ask the user
+   - Explain what you're uncertain about
+   - Explain what you researched
+   - Ask for guidance before proceeding
+4. NEVER GUESS - Guessing is a failure
+```
+
+### Uncertainty Triggers
+
+If any of these apply, you are uncertain and must follow the protocol:
+
+- "I think this might work..."
+- "Based on my training, I believe..."
+- "This should be correct..."
+- "I'm not 100% sure, but..."
+- "This is probably how it works..."
+
+These phrases indicate stale knowledge or assumptions. Research first.
+
+---
+
+## Commit and Progress Discipline
+
+### Atomic Commits
+
+Each logical unit of work gets its own commit:
+
+- One skill creation = one commit
+- One skill modification = one commit
+- One documentation update = one commit
+- One bug fix = one commit
+
+Do not batch unrelated changes. Each commit should be independently understandable and revertible.
+
+### Continuous Updates
+
+Update progress continuously, not at the end:
+
+- Comment on issues at each significant milestone
+- Update status as work progresses
+- Document blockers immediately when encountered
+- Do not wait until completion to report progress
+
+### Commit Message Format
+
+```
+<type>: <description>
+
+<body explaining what and why>
+
+Research: <sources consulted>
+Verified: <what was verified>
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `chore`
+
+---
+
+## Skill Structure Standards
+
+### Required Frontmatter
+
+Every skill must have:
+
+```yaml
+---
+name: skill-name
+description: When to use this skill - be specific about triggers
+---
+```
+
+### Required Sections
+
+Skills should include as appropriate:
+
+1. **Overview** - What this skill does and core principle
+2. **When to Use** - Specific triggers for invoking this skill
+3. **The Protocol/Process** - Step-by-step instructions
+4. **Checklist** - Verification items
+5. **Integration** - What skills this calls or is called by
+
+### Pattern Consistency
+
+Match existing patterns in this repository:
+
+- Use tables for structured information
+- Use code blocks for commands and examples
+- Use blockquotes for announcements
+- Keep language direct and imperative
+- No fluff, no filler
+
+---
+
+## Repository-Specific Rules
+
+### Directory Structure
+
+```
+skills/
+  skill-name/
+    SKILL.md        # The skill definition
+templates/          # Shared templates
+hooks/              # Session hooks
+```
+
+Skills must be directly under `skills/` - not nested in category subdirectories.
+
+### Skill Naming
+
+- Use kebab-case: `skill-name`
+- Be descriptive: `research-after-failure` not `research`
+- Match the `name` field in frontmatter exactly to directory name
+
+### Testing Skills
+
+Before committing a new or modified skill:
+
+1. Verify the skill loads (check for syntax errors in frontmatter)
+2. Read through as if you were following it - does it make sense?
+3. Check all referenced skills exist
+4. Verify all links work
+
+---
+
+## Recovery From Failure
+
+### If You Realize You Cut Corners
+
+1. **Stop immediately** - Do not continue
+2. **Acknowledge the failure** - Be explicit about what was skipped
+3. **Revert if necessary** - Undo incomplete or unverified work
+4. **Restart properly** - Begin again with full research and methodology
+5. **Do not apologize repeatedly** - Fix it and move on
+
+### If Research Reveals Your Approach Was Wrong
+
+1. **Stop the current approach** - Do not try to salvage it
+2. **Document what you learned** - Why was it wrong?
+3. **Research the correct approach** - Use the research protocol
+4. **Start fresh** - Do not patch incorrect work
+
+---
+
+## Quick Reference
+
+### Before ANY Task
+
+- [ ] Research current Claude Code documentation
+- [ ] Research existing patterns in this repository
+- [ ] Research current best practices (web search)
+- [ ] Announce your research findings
+
+### Before Modifying a Skill
+
+- [ ] Read the entire skill
+- [ ] Summarize its purpose
+- [ ] Identify integration points
+- [ ] Understand patterns used
+
+### Before Claiming Completion
+
+- [ ] Skill loads correctly
+- [ ] Follows established patterns
+- [ ] Documentation complete
+- [ ] Research backing documented
+- [ ] Integration verified
+- [ ] Provide explicit verification statement
+
+### When Uncertain
+
+- [ ] Stop
+- [ ] Research
+- [ ] If still uncertain, ask
+- [ ] Never guess
+
+---
+
+## The Bottom Line
+
+You are working on a repository that defines how Claude should work. The standards here must be higher than anywhere else.
+
+**Research first. Work slowly. Verify everything. No shortcuts.**
+
+If this feels tedious, good. Tedium prevents errors. Speed creates them.

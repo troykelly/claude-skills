@@ -1,6 +1,6 @@
 {
   "name": "issue-driven-development",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Opinionated GitHub-native development workflow with 40 skills for autonomous, issue-driven software development. Enforces TDD, strict typing, IPv6-first networking, comprehensive code review, local service testing, and continuous issue tracking. Includes work planning and autonomous orchestration with parallel workers.",
   "author": {
     "name": "Troy Kelly",

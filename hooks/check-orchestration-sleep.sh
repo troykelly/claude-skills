@@ -80,7 +80,15 @@ echo ""
 
 ALL_COMPLETE=true
 ANY_FAILED=false
-STATUSES=""
+STATUSES_JSON="[]"
+
+# Helper to add a status entry to STATUSES_JSON array
+add_status() {
+  local pr="$1" status="$2" passed="${3:-0}" total="${4:-0}"
+  STATUSES_JSON=$(echo "$STATUSES_JSON" | jq --argjson pr "$pr" --arg status "$status" \
+    --argjson passed "$passed" --argjson total "$total" \
+    '. + [{"pr": $pr, "status": $status, "passed": $passed, "total": $total}]')
+}
 
 for PR in $(jq -r '.sleep.waiting_on[]' "$STATE_FILE" 2>/dev/null); do
   # Check if all checks are complete (not pending)
@@ -88,7 +96,7 @@ for PR in $(jq -r '.sleep.waiting_on[]' "$STATE_FILE" 2>/dev/null); do
 
   if [ "$CHECKS_JSON" = "[]" ]; then
     echo -e "  PR #$PR: ${YELLOW}No checks found${NC}"
-    STATUSES="${STATUSES}{\"pr\": $PR, \"status\": \"no_checks\"},"
+    add_status "$PR" "no_checks" 0 0
     continue
   fi
 
@@ -101,17 +109,17 @@ for PR in $(jq -r '.sleep.waiting_on[]' "$STATE_FILE" 2>/dev/null); do
   if [ "$PENDING" = "true" ]; then
     echo -e "  PR #$PR: ${YELLOW}⏳ Running${NC} ($PASSED/$TOTAL passed)"
     ALL_COMPLETE=false
-    STATUSES="${STATUSES}{\"pr\": $PR, \"status\": \"pending\", \"passed\": $PASSED, \"total\": $TOTAL},"
+    add_status "$PR" "pending" "$PASSED" "$TOTAL"
   elif [ "$FAILED" = "true" ]; then
     echo -e "  PR #$PR: ${RED}❌ Failed${NC} ($PASSED/$TOTAL passed)"
     ANY_FAILED=true
-    STATUSES="${STATUSES}{\"pr\": $PR, \"status\": \"failed\", \"passed\": $PASSED, \"total\": $TOTAL},"
+    add_status "$PR" "failed" "$PASSED" "$TOTAL"
   elif [ "$ALL_SUCCESS" = "true" ]; then
     echo -e "  PR #$PR: ${GREEN}✅ Passed${NC} ($PASSED/$TOTAL passed)"
-    STATUSES="${STATUSES}{\"pr\": $PR, \"status\": \"passed\", \"passed\": $PASSED, \"total\": $TOTAL},"
+    add_status "$PR" "passed" "$PASSED" "$TOTAL"
   else
     echo -e "  PR #$PR: ${YELLOW}⚠️ Mixed${NC} ($PASSED/$TOTAL passed)"
-    STATUSES="${STATUSES}{\"pr\": $PR, \"status\": \"mixed\", \"passed\": $PASSED, \"total\": $TOTAL},"
+    add_status "$PR" "mixed" "$PASSED" "$TOTAL"
   fi
 done
 
@@ -132,7 +140,7 @@ if [ "$ALL_COMPLETE" = "true" ]; then
       "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
     log_hook_event "SessionStart" "check-orchestration-sleep" "wake_triggered" \
-      "{\"reason\": \"ci_complete_with_failures\", \"prs\": [${STATUSES%,}]}"
+      "$(json_obj_mixed "reason" "s:ci_complete_with_failures" "prs" "r:$STATUSES_JSON")"
   else
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}CI COMPLETE - ALL PASSED - ORCHESTRATION SHOULD WAKE${NC}"
@@ -146,7 +154,7 @@ if [ "$ALL_COMPLETE" = "true" ]; then
       "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
     log_hook_event "SessionStart" "check-orchestration-sleep" "wake_triggered" \
-      "{\"reason\": \"ci_complete_all_passed\", \"prs\": [${STATUSES%,}]}"
+      "$(json_obj_mixed "reason" "s:ci_complete_all_passed" "prs" "r:$STATUSES_JSON")"
   fi
 else
   echo -e "${BLUE}CI still running. Orchestration remains asleep.${NC}"
@@ -157,7 +165,7 @@ else
   fi
 
   log_hook_event "SessionStart" "check-orchestration-sleep" "completed" \
-    "{\"status\": \"still_sleeping\", \"prs\": [${STATUSES%,}]}"
+    "$(json_obj_mixed "status" "s:still_sleeping" "prs" "r:$STATUSES_JSON")"
 fi
 
 echo ""

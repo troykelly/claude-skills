@@ -91,7 +91,7 @@ PRs must have green CI before ending the session.
 EOF
 
   log_hook_event "Stop" "check-ci-before-stop" "blocked" \
-    "{\"reason\": \"ci_running\", \"prs\": \"${RUNNING_PRS}\"}"
+    "$(json_obj "reason" "ci_running" "prs" "$RUNNING_PRS")"
   exit 2
 fi
 
@@ -133,7 +133,7 @@ All CI failures must be fixed or documented before ending the session.
 EOF
 
     log_hook_event "Stop" "check-ci-before-stop" "blocked" \
-      "{\"reason\": \"undocumented_failures\", \"prs\": \"${UNDOCUMENTED_FAILURES}\"}"
+      "$(json_obj "reason" "undocumented_failures" "prs" "$UNDOCUMENTED_FAILURES")"
     exit 2
   fi
 
@@ -143,6 +143,6 @@ fi
 
 # All checks passed or failures documented
 log_hook_event "Stop" "check-ci-before-stop" "completed" \
-  "{\"passed_prs\": \"${PASSED_PRS}\", \"failed_prs\": \"${FAILED_PRS}\"}"
+  "$(json_obj "passed_prs" "$PASSED_PRS" "failed_prs" "$FAILED_PRS")"
 
 exit 0

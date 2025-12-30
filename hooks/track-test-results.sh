@@ -50,7 +50,7 @@ if [ "$EXIT_CODE" = "0" ]; then
   echo "$(date -Iseconds)" > "$TEST_PASS_FILE"
 
   log_hook_event "PostToolUse" "track-test-results" "tests_passed" \
-    "{\"command\": \"$(echo "$COMMAND" | head -c 100)\", \"marker\": \"$TEST_PASS_FILE\"}"
+    "$(json_obj "command" "$(echo "$COMMAND" | head -c 100)" "marker" "$TEST_PASS_FILE")"
 
   echo "" >&2
   echo "[test-gate] ✅ Tests passed - commit gate satisfied" >&2
@@ -60,7 +60,7 @@ else
   rm -f "$TEST_PASS_FILE"
 
   log_hook_event "PostToolUse" "track-test-results" "tests_failed" \
-    "{\"command\": \"$(echo "$COMMAND" | head -c 100)\", \"exit_code\": \"$EXIT_CODE\"}"
+    "$(json_obj "command" "$(echo "$COMMAND" | head -c 100)" "exit_code" "$EXIT_CODE")"
 
   echo "" >&2
   echo "[test-gate] ❌ Tests failed - commit gate NOT satisfied" >&2

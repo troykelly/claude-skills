@@ -50,7 +50,7 @@ if echo "$COMMAND" | grep -qE '(npm test|pnpm test|yarn test|pytest|cargo test|g
   # This is informational - we'll create the marker in PostToolUse
   # For now, just log that tests are being run
   log_hook_event "PreToolUse" "validate-tests-pass" "test_command_detected" \
-    "{\"command\": \"$(echo "$COMMAND" | head -c 100)\"}"
+    "$(json_obj "command" "$(echo "$COMMAND" | head -c 100)")"
   exit 0
 fi
 
@@ -107,6 +107,6 @@ Tip: If this is a documentation-only change, unstage source files:
 EOF
 
 log_hook_event "PreToolUse" "validate-tests-pass" "commit_blocked" \
-  "{\"staged_files\": $(echo "$SOURCE_CHANGES" | wc -l | tr -d ' ')}"
+  "$(json_obj_mixed "staged_files" "n:$(echo "$SOURCE_CHANGES" | wc -l | tr -d ' ')")"
 
 exit 2

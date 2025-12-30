@@ -105,13 +105,17 @@ fi
 # Output warnings if any found
 if [ -n "$WARNINGS" ]; then
   log_hook_event "PostToolUse" "security-scan" "warnings" \
-    "{\"file\": \"$FILE_PATH\", \"has_secrets\": $([ -n \"$SECRETS_FOUND\" ] && echo true || echo false), \"has_sql\": $([ -n \"$SQL_ISSUES\" ] && echo true || echo false), \"has_eval\": $([ -n \"$EVAL_USAGE\" ] && echo true || echo false), \"has_xss\": $([ -n \"$INNERHTML\" ] && echo true || echo false)}"
+    "$(json_obj_mixed "file" "s:$FILE_PATH" \
+      "has_secrets" "b:$([ -n "$SECRETS_FOUND" ] && echo true || echo false)" \
+      "has_sql" "b:$([ -n "$SQL_ISSUES" ] && echo true || echo false)" \
+      "has_eval" "b:$([ -n "$EVAL_USAGE" ] && echo true || echo false)" \
+      "has_xss" "b:$([ -n "$INNERHTML" ] && echo true || echo false)")"
   echo "## Security Scan Warnings"
   echo "$WARNINGS"
   echo ""
   echo "*This is an advisory scan. Review findings during code review.*"
 else
-  log_hook_event "PostToolUse" "security-scan" "clean" "{\"file\": \"$FILE_PATH\"}"
+  log_hook_event "PostToolUse" "security-scan" "clean" "$(json_obj "file" "$FILE_PATH")"
 fi
 
 exit 0  # Always allow - this is advisory only

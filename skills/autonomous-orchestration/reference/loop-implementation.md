@@ -1,5 +1,83 @@
 # Orchestration Loop Implementation
 
+## PR Resolution Bootstrap
+
+**CRITICAL:** This runs ONCE before the main loop starts. Resolves existing PRs before spawning new work.
+
+```bash
+resolve_existing_prs() {
+  echo "=== PR RESOLUTION BOOTSTRAP ==="
+
+  # Get all open PRs, excluding release placeholders and holds
+  OPEN_PRS=$(gh pr list --json number,headRefName,labels \
+    --jq '[.[] | select(
+      (.headRefName | startswith("release/") | not) and
+      (.labels | map(.name) | index("release-placeholder") | not) and
+      (.labels | map(.name) | index("do-not-merge") | not)
+    )] | .[].number')
+
+  if [ -z "$OPEN_PRS" ]; then
+    echo "No actionable PRs to resolve. Proceeding to main loop."
+    return 0
+  fi
+
+  echo "Found PRs to resolve: $OPEN_PRS"
+
+  for pr in $OPEN_PRS; do
+    echo "Processing PR #$pr..."
+
+    # Get CI status
+    ci_status=$(gh pr checks "$pr" --json state --jq '.[].state' 2>/dev/null | sort -u)
+
+    # Get linked issue
+    ISSUE=$(gh pr view "$pr" --json body --jq '.body' | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+' | head -1)
+
+    if [ -z "$ISSUE" ]; then
+      echo "  ⚠ No linked issue found, skipping"
+      continue
+    fi
+
+    # Check if CI passed
+    if echo "$ci_status" | grep -q "FAILURE"; then
+      echo "  ❌ CI failing - triggering ci-monitoring for PR #$pr"
+      handle_ci_failure "$pr"
+      continue
+    fi
+
+    if echo "$ci_status" | grep -q "PENDING"; then
+      echo "  ⏳ CI pending for PR #$pr, will check in main loop"
+      continue
+    fi
+
+    if echo "$ci_status" | grep -q "SUCCESS"; then
+      # Verify review artifact
+      REVIEW_EXISTS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+        --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length' 2>/dev/null || echo "0")
+
+      if [ "$REVIEW_EXISTS" = "0" ]; then
+        echo "  ⚠ No review artifact - requesting review for #$ISSUE"
+        gh issue comment "$ISSUE" --body "## Review Required
+
+PR #$pr has passing CI but no review artifact.
+
+**Action needed:** Complete comprehensive-review and post artifact to this issue.
+
+---
+*Bootstrap phase - Orchestrator*"
+        continue
+      fi
+
+      # All checks pass - merge
+      echo "  ✅ Merging PR #$pr"
+      gh pr merge "$pr" --squash --delete-branch
+      mark_issue_done "$ISSUE"
+    fi
+  done
+
+  echo "=== BOOTSTRAP COMPLETE ==="
+}
+```
+
 ## Loop Diagram
 
 ```
@@ -118,6 +196,14 @@ mark_issue_done() {
 ## Main Loop
 
 ```bash
+# ═══════════════════════════════════════════════════════════════════
+# BOOTSTRAP: Resolve existing PRs before spawning new work
+# ═══════════════════════════════════════════════════════════════════
+resolve_existing_prs
+
+# ═══════════════════════════════════════════════════════════════════
+# MAIN LOOP: Continuous orchestration
+# ═══════════════════════════════════════════════════════════════════
 while true; do
   # Post status update to tracking issue
   post_orchestration_status

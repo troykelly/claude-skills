@@ -122,6 +122,133 @@ The operation does NOT pause for:
 - Switching between epics
 - Any user input (unless blocked by a fatal error)
 
+## PR Resolution Bootstrap Phase
+
+**CRITICAL:** Before spawning ANY new workers, resolve all existing open PRs first.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    BOOTSTRAP PHASE                        │
+│             (Runs ONCE before main loop)                  │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+                          ▼
+               ┌───────────────────┐
+               │ GET OPEN PRs      │
+               │                   │
+               │ Filter out:       │
+               │ - release/*       │
+               │ - release-        │
+               │   placeholder     │
+               └─────────┬─────────┘
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+        ┌───────────┐         ┌───────────┐
+        │ Has PRs?  │─── No ──│ → MAIN    │
+        │           │         │   LOOP    │
+        └─────┬─────┘         └───────────┘
+              │ Yes
+              ▼
+        ┌───────────────────────────────┐
+        │ FOR EACH PR:                  │
+        │                               │
+        │ 1. Check CI status            │
+        │ 2. Verify review artifact     │
+        │ 3. Merge if ready OR          │
+        │ 4. Wait/fix if not            │
+        └───────────────────────────────┘
+                          │
+                          ▼
+                    MAIN LOOP
+```
+
+### Bootstrap Implementation
+
+```bash
+resolve_existing_prs() {
+  echo "=== PR RESOLUTION BOOTSTRAP ==="
+
+  # Get all open PRs, excluding release placeholders
+  OPEN_PRS=$(gh pr list --json number,headRefName,labels \
+    --jq '[.[] | select(
+      (.headRefName | startswith("release/") | not) and
+      (.labels | map(.name) | index("release-placeholder") | not)
+    )] | .[].number')
+
+  if [ -z "$OPEN_PRS" ]; then
+    echo "No actionable PRs to resolve. Proceeding to main loop."
+    return 0
+  fi
+
+  echo "Found PRs to resolve: $OPEN_PRS"
+
+  for pr in $OPEN_PRS; do
+    echo "Processing PR #$pr..."
+
+    # Get CI status
+    ci_status=$(gh pr checks "$pr" --json state --jq '.[].state' 2>/dev/null | sort -u)
+
+    # Get linked issue
+    ISSUE=$(gh pr view "$pr" --json body --jq '.body' | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+' | head -1)
+
+    if [ -z "$ISSUE" ]; then
+      echo "  ⚠ No linked issue found, skipping"
+      continue
+    fi
+
+    # Check if CI passed
+    if echo "$ci_status" | grep -q "FAILURE"; then
+      echo "  ❌ CI failing - triggering ci-monitoring for PR #$pr"
+      # Invoke ci-monitoring skill to fix
+      handle_ci_failure "$pr"
+      continue
+    fi
+
+    if echo "$ci_status" | grep -q "PENDING"; then
+      echo "  ⏳ CI pending for PR #$pr, will check in main loop"
+      continue
+    fi
+
+    if echo "$ci_status" | grep -q "SUCCESS"; then
+      # Verify review artifact
+      REVIEW_EXISTS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+        --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length' 2>/dev/null || echo "0")
+
+      if [ "$REVIEW_EXISTS" = "0" ]; then
+        echo "  ⚠ No review artifact - requesting review for #$ISSUE"
+        gh issue comment "$ISSUE" --body "## Review Required
+
+PR #$pr has passing CI but no review artifact.
+
+**Action needed:** Complete comprehensive-review and post artifact to this issue.
+
+---
+*Bootstrap phase - Orchestrator*"
+        continue
+      fi
+
+      # All checks pass - merge
+      echo "  ✅ Merging PR #$pr"
+      gh pr merge "$pr" --squash --delete-branch
+      mark_issue_done "$ISSUE"
+    fi
+  done
+
+  echo "=== BOOTSTRAP COMPLETE ==="
+}
+```
+
+### Release Placeholder Detection
+
+PRs are excluded from bootstrap resolution if:
+
+| Condition | Example |
+|-----------|---------|
+| Branch starts with `release/` | `release/v2.0.0`, `release/2025-01` |
+| Has `release-placeholder` label | Manual exclusion |
+| Has `do-not-merge` label | Explicit hold |
+
 ## Orchestration Loop
 
 ```
@@ -224,6 +351,15 @@ Before starting orchestration:
 - [ ] No uncommitted changes in main worktree
 - [ ] Tracking issue exists with `orchestration-tracking` label
 - [ ] Project board configured with Status field
+
+Bootstrap phase:
+
+- [ ] Existing open PRs detected
+- [ ] Release placeholders excluded (`release/*`, `release-placeholder`, `do-not-merge` labels)
+- [ ] CI status checked for each PR
+- [ ] Review artifacts verified before merge
+- [ ] PRs merged or flagged for attention
+- [ ] Bootstrap complete before spawning workers
 
 During orchestration:
 

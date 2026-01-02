@@ -197,14 +197,59 @@ mark_issue_done() {
 
 ```bash
 # ═══════════════════════════════════════════════════════════════════
+# ORCHESTRATION START: Write active marker to MCP Memory
+# ═══════════════════════════════════════════════════════════════════
+write_active_marker() {
+  mcp__memory__create_entities([{
+    "name": "ActiveOrchestration",
+    "entityType": "Orchestration",
+    "observations": [
+      "Status: ACTIVE",
+      "Scope: $SCOPE",
+      "Tracking Issue: #$TRACKING_ISSUE",
+      "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)",
+      "Repository: $OWNER/$REPO",
+      "Phase: BOOTSTRAP",
+      "Last Loop: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    ]
+  }])
+}
+
+update_active_marker() {
+  local phase=$1
+  mcp__memory__add_observations({
+    "observations": [{
+      "entityName": "ActiveOrchestration",
+      "contents": [
+        "Phase: $phase",
+        "Last Loop: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      ]
+    }]
+  })
+}
+
+clear_active_marker() {
+  mcp__memory__delete_entities({
+    "entityNames": ["ActiveOrchestration"]
+  })
+}
+
+# Write marker at orchestration start
+write_active_marker
+
+# ═══════════════════════════════════════════════════════════════════
 # BOOTSTRAP: Resolve existing PRs before spawning new work
 # ═══════════════════════════════════════════════════════════════════
 resolve_existing_prs
+update_active_marker "MAIN_LOOP"
 
 # ═══════════════════════════════════════════════════════════════════
 # MAIN LOOP: Continuous orchestration
 # ═══════════════════════════════════════════════════════════════════
 while true; do
+  # Update marker on each iteration (survives compaction)
+  update_active_marker "MAIN_LOOP"
+
   # Post status update to tracking issue
   post_orchestration_status
 
@@ -274,15 +319,18 @@ Complete comprehensive-review and post artifact to issue before merge."
 
   if [ "$pending" -eq 0 ] && [ "$in_progress" -eq 0 ] && [ "$in_review" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
     complete_orchestration
+    clear_active_marker  # Remove marker - orchestration complete
     exit 0
   fi
 
   if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$open_prs" -gt 0 ]; then
+    update_active_marker "SLEEPING:waiting_for_ci"  # Keep marker - will resume on CI complete
     enter_sleep "waiting_for_ci"
     exit 0
   fi
 
   if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$blocked" -gt 0 ]; then
+    update_active_marker "SLEEPING:all_remaining_blocked"  # Keep marker - will resume when unblocked
     enter_sleep "all_remaining_blocked"
     exit 0
   fi

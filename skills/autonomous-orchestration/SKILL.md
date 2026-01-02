@@ -40,9 +40,71 @@ Orchestrates long-running autonomous work across multiple issues, spawning paral
 | Project Board Status | THE source of truth | Ready, In Progress, In Review, Blocked, Done |
 | Issue Comments | Activity log | Worker assignment, progress, deviations |
 | Labels | Lineage only | `spawned-from:#N`, `depth:N`, `epic-*` |
-| MCP Memory | Fast cache | Read optimization (dual-write pattern) |
+| MCP Memory | Fast cache + active marker | Read optimization, **active orchestration detection** |
 
 **See:** `reference/state-management.md` for detailed state queries and updates.
+
+## Context Compaction Survival
+
+**CRITICAL:** Orchestration must survive mid-loop context compaction.
+
+### On Start: Write Active Marker
+
+```bash
+# Write to MCP Memory when orchestration starts
+mcp__memory__create_entities([{
+  "name": "ActiveOrchestration",
+  "entityType": "Orchestration",
+  "observations": [
+    "Status: ACTIVE",
+    "Scope: [MILESTONE/EPIC/unbounded]",
+    "Tracking Issue: #[NUMBER]",
+    "Started: [ISO_TIMESTAMP]",
+    "Repository: [owner/repo]",
+    "Phase: BOOTSTRAP|MAIN_LOOP",
+    "Last Loop: [ISO_TIMESTAMP]"
+  ]
+}])
+```
+
+### On Each Loop Iteration: Update Marker
+
+```bash
+mcp__memory__add_observations({
+  "observations": [{
+    "entityName": "ActiveOrchestration",
+    "contents": ["Last Loop: [ISO_TIMESTAMP]", "Phase: MAIN_LOOP"]
+  }]
+})
+```
+
+### On Complete: Remove Marker
+
+```bash
+mcp__memory__delete_entities({
+  "entityNames": ["ActiveOrchestration"]
+})
+```
+
+### On Session Resume (After Compaction)
+
+Session-start skill checks for active orchestration:
+
+```bash
+# Check MCP Memory for active orchestration
+ACTIVE=$(mcp__memory__open_nodes({"names": ["ActiveOrchestration"]}))
+
+if [ -n "$ACTIVE" ]; then
+  echo "⚠️ ACTIVE ORCHESTRATION DETECTED"
+  echo "Scope: [from ACTIVE]"
+  echo "Tracking: [from ACTIVE]"
+  echo ""
+  echo "Resuming orchestration loop..."
+  # Invoke autonomous-orchestration skill to resume
+fi
+```
+
+**This ensures:** Even if context compacts mid-loop, the next session will detect the active orchestration and resume it.
 
 ## Immediate Start (User Consent Implied)
 

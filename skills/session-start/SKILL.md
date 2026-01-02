@@ -197,6 +197,41 @@ echo "Sync check complete."
 
 ---
 
+### Step 3.6: Active Orchestration Detection
+
+**CRITICAL:** Check if autonomous orchestration was running and needs to resume.
+
+```bash
+# Check MCP Memory for active orchestration marker
+ACTIVE_ORCH=$(mcp__memory__open_nodes({"names": ["ActiveOrchestration"]}))
+```
+
+**If ActiveOrchestration entity exists:**
+
+```markdown
+## ⚠️ ACTIVE ORCHESTRATION DETECTED
+
+**Status:** [from entity]
+**Scope:** [from entity]
+**Tracking Issue:** #[from entity]
+**Last Loop:** [from entity]
+**Repository:** [from entity]
+
+### Action Required
+
+Context was compacted mid-orchestration. Resuming now.
+
+1. Verify tracking issue still exists
+2. Resume orchestration via `autonomous-orchestration` skill
+3. Continue from current phase (BOOTSTRAP or MAIN_LOOP)
+```
+
+**Resume orchestration immediately** - do not wait for user input. The original request for autonomous operation is still the active consent.
+
+**If no ActiveOrchestration entity:** Continue to Step 4.
+
+---
+
 ### Step 4: Memory Recall
 
 Search for relevant context from previous sessions.
@@ -354,6 +389,7 @@ Before proceeding to work:
 - [ ] **GitHub Project state checked (via project board, not labels)**
 - [ ] **Project board sync verified (Step 3.5)**
 - [ ] **Sync discrepancies reported/fixed**
+- [ ] **Active orchestration checked (Step 3.6)** - Resume if found
 - [ ] Memory searched for context
 - [ ] Active work detected or new work identified
 - [ ] Environment bootstrapped if needed

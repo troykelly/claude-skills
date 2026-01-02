@@ -42,6 +42,24 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before creating a PR, verify:\n\n1. **Local tests pass**: Have you run the test suite locally and confirmed all tests pass?\n2. **Review completed**: Has the comprehensive-review skill been run and findings addressed?\n3. **Documentation updated**: If API or features changed, has documentation been updated?\n\nIf any of these are incomplete, complete them first before creating the PR."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__merge_pull_request",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before merging this PR, verify:\n\n1. **CI is green**: All CI checks must be passing. Check with `gh pr checks [PR_NUMBER]`.\n2. **Review approved**: PR must have an approval or be self-reviewed with comprehensive-review.\n3. **No blocking comments**: All review comments must be resolved.\n\nDo NOT merge if any of these conditions are not met."
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -52,6 +70,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/security-scan.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-generated-artifacts.sh",
+            "timeout": 15
           }
         ]
       },

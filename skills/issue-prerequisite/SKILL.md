@@ -1,6 +1,9 @@
 ---
 name: issue-prerequisite
 description: Use before starting ANY work - hard gate ensuring a GitHub issue exists, creating one if needed through user questioning
+allowed-tools:
+  - mcp__github__*
+model: opus
 ---
 
 # Issue Prerequisite

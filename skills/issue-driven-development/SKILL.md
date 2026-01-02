@@ -1,6 +1,18 @@
 ---
 name: issue-driven-development
 description: Use for any development work - the master 13-step coding process that orchestrates all other skills, ensuring GitHub issue tracking, proper branching, TDD, code review, and CI verification
+allowed-tools:
+  - Bash
+  - Read
+  - Edit
+  - Write
+  - Grep
+  - Glob
+  - Task
+  - mcp__github__*
+  - mcp__git__*
+  - mcp__memory__*
+model: opus
 ---
 
 # Issue-Driven Development

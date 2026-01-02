@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 # SessionStart hook to check if orchestration should wake from sleep
 #
-# Checks .orchestrator/state.json for sleep status and evaluates
+# Checks GitHub tracking issue for sleep status and evaluates
 # if CI has completed for waiting PRs.
 #
 # Exit codes:
 #   0 = Continue (outputs status information)
 #   2 = Block with message (not used - informational only)
+#
+# State Location:
+#   GitHub Issue comments with <!-- ORCHESTRATION:SLEEP --> markers
+#   NO local state files - all state survives crashes
 
 set -euo pipefail
 
-# Source logging utility if available
+# Source libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/lib/log-event.sh" ]; then
   source "$SCRIPT_DIR/lib/log-event.sh"
+fi
+if [ -f "$SCRIPT_DIR/lib/github-state.sh" ]; then
+  source "$SCRIPT_DIR/lib/github-state.sh"
 fi
 
 # Colors
@@ -29,22 +36,33 @@ exec 1>&2
 # Log this hook event
 log_hook_event "SessionStart" "check-orchestration-sleep" "started" "{}"
 
-# Find orchestration state file
-STATE_FILE=""
-if [ -f ".orchestrator/state.json" ]; then
-  STATE_FILE=".orchestrator/state.json"
-elif [ -f "${CLAUDE_PROJECT_DIR:-.}/.orchestrator/state.json" ]; then
-  STATE_FILE="${CLAUDE_PROJECT_DIR}/.orchestrator/state.json"
+# Get tracking issue from environment or project config
+TRACKING_ISSUE="${TRACKING_ISSUE:-${ORCHESTRATION_ISSUE:-}}"
+
+# Try to find tracking issue from project if not set
+if [ -z "$TRACKING_ISSUE" ]; then
+  # Look for an open issue with "orchestration" label
+  REPO=$(get_repo)
+  if [ -n "$REPO" ]; then
+    TRACKING_ISSUE=$(gh issue list --repo "$REPO" --label "orchestration" --state open --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+  fi
 fi
 
-# Skip if no orchestration state
-if [ -z "$STATE_FILE" ] || [ ! -f "$STATE_FILE" ]; then
-  log_hook_event "SessionStart" "check-orchestration-sleep" "skipped" '{"reason": "no state file"}'
+if [ -z "$TRACKING_ISSUE" ]; then
+  log_hook_event "SessionStart" "check-orchestration-sleep" "skipped" '{"reason": "no tracking issue"}'
+  exit 0
+fi
+
+# Get sleep status from GitHub
+SLEEP_JSON=$(get_sleep_status "$TRACKING_ISSUE")
+
+if [ -z "$SLEEP_JSON" ] || [ "$SLEEP_JSON" = "null" ]; then
+  log_hook_event "SessionStart" "check-orchestration-sleep" "skipped" '{"reason": "no sleep state"}'
   exit 0
 fi
 
 # Check if sleeping
-SLEEPING=$(jq -r '.sleep.sleeping // false' "$STATE_FILE" 2>/dev/null || echo "false")
+SLEEPING=$(echo "$SLEEP_JSON" | jq -r '.sleeping // false')
 
 if [ "$SLEEPING" != "true" ]; then
   log_hook_event "SessionStart" "check-orchestration-sleep" "completed" '{"status": "not sleeping"}'
@@ -52,10 +70,10 @@ if [ "$SLEEPING" != "true" ]; then
 fi
 
 # Orchestration is sleeping - gather information
-REASON=$(jq -r '.sleep.reason // "unknown"' "$STATE_FILE")
-SINCE=$(jq -r '.sleep.since // "unknown"' "$STATE_FILE")
-WAITING_PRS=$(jq -r '.sleep.waiting_on // [] | join(", ")' "$STATE_FILE")
-RESUME_SESSION=$(jq -r '.resume_session // ""' "$STATE_FILE")
+REASON=$(echo "$SLEEP_JSON" | jq -r '.reason // "unknown"')
+SINCE=$(echo "$SLEEP_JSON" | jq -r '.since // "unknown"')
+WAITING_PRS=$(echo "$SLEEP_JSON" | jq -r '.waiting_on // [] | join(", ")')
+RESUME_SESSION=$(echo "$SLEEP_JSON" | jq -r '.resume_session // ""')
 
 echo ""
 echo -e "${BLUE}[orchestration]${NC} Sleep Status Check"
@@ -65,6 +83,7 @@ echo ""
 echo "  Reason: $REASON"
 echo "  Since: $SINCE"
 echo "  Waiting on PRs: ${WAITING_PRS:-none}"
+echo "  Tracking Issue: #$TRACKING_ISSUE"
 echo ""
 
 # Check if wake conditions are met (CI complete for all PRs)
@@ -90,7 +109,7 @@ add_status() {
     '. + [{"pr": $pr, "status": $status, "passed": $passed, "total": $total}]')
 }
 
-for PR in $(jq -r '.sleep.waiting_on[]' "$STATE_FILE" 2>/dev/null); do
+for PR in $(echo "$SLEEP_JSON" | jq -r '.waiting_on[]' 2>/dev/null); do
   # Check if all checks are complete (not pending)
   CHECKS_JSON=$(gh pr checks "$PR" --json name,state,conclusion 2>/dev/null || echo "[]")
 
@@ -107,18 +126,18 @@ for PR in $(jq -r '.sleep.waiting_on[]' "$STATE_FILE" 2>/dev/null); do
   TOTAL=$(echo "$CHECKS_JSON" | jq 'length')
 
   if [ "$PENDING" = "true" ]; then
-    echo -e "  PR #$PR: ${YELLOW}⏳ Running${NC} ($PASSED/$TOTAL passed)"
+    echo -e "  PR #$PR: ${YELLOW}Running${NC} ($PASSED/$TOTAL passed)"
     ALL_COMPLETE=false
     add_status "$PR" "pending" "$PASSED" "$TOTAL"
   elif [ "$FAILED" = "true" ]; then
-    echo -e "  PR #$PR: ${RED}❌ Failed${NC} ($PASSED/$TOTAL passed)"
+    echo -e "  PR #$PR: ${RED}Failed${NC} ($PASSED/$TOTAL passed)"
     ANY_FAILED=true
     add_status "$PR" "failed" "$PASSED" "$TOTAL"
   elif [ "$ALL_SUCCESS" = "true" ]; then
-    echo -e "  PR #$PR: ${GREEN}✅ Passed${NC} ($PASSED/$TOTAL passed)"
+    echo -e "  PR #$PR: ${GREEN}Passed${NC} ($PASSED/$TOTAL passed)"
     add_status "$PR" "passed" "$PASSED" "$TOTAL"
   else
-    echo -e "  PR #$PR: ${YELLOW}⚠️ Mixed${NC} ($PASSED/$TOTAL passed)"
+    echo -e "  PR #$PR: ${YELLOW}Mixed${NC} ($PASSED/$TOTAL passed)"
     add_status "$PR" "mixed" "$PASSED" "$TOTAL"
   fi
 done
@@ -128,30 +147,24 @@ echo ""
 # Report wake status
 if [ "$ALL_COMPLETE" = "true" ]; then
   if [ "$ANY_FAILED" = "true" ]; then
-    echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${YELLOW}CI COMPLETE WITH FAILURES - ORCHESTRATION SHOULD WAKE${NC}"
-    echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     echo "Some PRs have failing CI. Investigate and fix failures."
     echo ""
 
-    # Update state file to wake
-    jq '.sleep.sleeping = false | .sleep.wake_reason = "ci_complete_with_failures"' \
-      "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+    # Wake orchestration via GitHub state
+    wake_from_sleep "ci_complete_with_failures" "$TRACKING_ISSUE"
 
     log_hook_event "SessionStart" "check-orchestration-sleep" "wake_triggered" \
       "$(json_obj_mixed "reason" "s:ci_complete_with_failures" "prs" "r:$STATUSES_JSON")"
   else
-    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}CI COMPLETE - ALL PASSED - ORCHESTRATION SHOULD WAKE${NC}"
-    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     echo "All PRs have passing CI. Resume orchestration loop."
     echo ""
 
-    # Update state file to wake
-    jq '.sleep.sleeping = false | .sleep.wake_reason = "ci_complete_all_passed"' \
-      "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+    # Wake orchestration via GitHub state
+    wake_from_sleep "ci_complete_all_passed" "$TRACKING_ISSUE"
 
     log_hook_event "SessionStart" "check-orchestration-sleep" "wake_triggered" \
       "$(json_obj_mixed "reason" "s:ci_complete_all_passed" "prs" "r:$STATUSES_JSON")"
@@ -163,6 +176,7 @@ else
   if [ -n "$RESUME_SESSION" ]; then
     echo "To force wake: claude --resume $RESUME_SESSION"
   fi
+  echo "Tracking issue: #$TRACKING_ISSUE"
 
   log_hook_event "SessionStart" "check-orchestration-sleep" "completed" \
     "$(json_obj_mixed "status" "s:still_sleeping" "prs" "r:$STATUSES_JSON")"

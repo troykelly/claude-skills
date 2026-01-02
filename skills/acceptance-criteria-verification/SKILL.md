@@ -1,6 +1,11 @@
 ---
 name: acceptance-criteria-verification
 description: Use after implementing features - verifies each acceptance criterion with structured testing and posts verification reports to the GitHub issue
+allowed-tools:
+  - Bash
+  - Read
+  - mcp__github__*
+model: opus
 ---
 
 # Acceptance Criteria Verification

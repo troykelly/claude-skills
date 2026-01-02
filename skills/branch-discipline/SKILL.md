@@ -1,6 +1,10 @@
 ---
 name: branch-discipline
 description: Use before any code changes - hard gate ensuring work never happens on main branch, with proper feature branch creation from correct base
+allowed-tools:
+  - Bash
+  - mcp__git__*
+model: opus
 ---
 
 # Branch Discipline

@@ -1,6 +1,10 @@
 ---
 name: review-gate
 description: HARD GATE before PR creation - verifies review artifact exists in issue comments, all findings addressed or tracked, blocks PR creation if requirements not met
+allowed-tools:
+  - Bash
+  - mcp__github__*
+model: opus
 ---
 
 # Review Gate

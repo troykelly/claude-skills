@@ -1,6 +1,8 @@
 ---
 name: inclusive-language
 description: Use when writing code, documentation, or comments - always use accessible and respectful terminology
+allowed-tools: []
+model: opus
 ---
 
 # Inclusive Language

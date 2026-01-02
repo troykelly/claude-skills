@@ -1,6 +1,8 @@
 ---
 name: strict-typing
 description: Use when writing code in typed languages - enforces full typing with no any/unknown/untyped escapes, even if it requires extra time
+allowed-tools: []
+model: opus
 ---
 
 # Strict Typing

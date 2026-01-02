@@ -1,6 +1,10 @@
 ---
 name: epic-management
 description: Use for LARGE work requiring feature-level grouping. Creates epic tracking issues, manages related issues under a common label, tracks epic progress, and coordinates with milestones.
+allowed-tools:
+  - Bash
+  - mcp__github__*
+model: opus
 ---
 
 # Epic Management

@@ -1,6 +1,17 @@
 ---
 name: worker-protocol
 description: Defines behavior protocol for spawned worker agents. Injected into worker prompts. Covers startup, progress reporting, exit conditions, and handover preparation.
+allowed-tools:
+  - Bash
+  - Read
+  - Edit
+  - Write
+  - Grep
+  - Glob
+  - mcp__github__*
+  - mcp__git__*
+  - mcp__memory__*
+model: opus
 ---
 
 # Worker Protocol

@@ -1,6 +1,13 @@
 ---
 name: research-after-failure
 description: Use after 2 consecutive failed attempts at solving a problem - STOP guessing and research documentation, codebase, and online resources before resuming
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - WebFetch
+  - WebSearch
+model: opus
 ---
 
 # Research After Failure

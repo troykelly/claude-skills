@@ -1,6 +1,14 @@
 ---
 name: ci-monitoring
 description: Use after creating PR - monitor CI pipeline, resolve failures cyclically until green or issue is identified as unresolvable
+allowed-tools:
+  - Bash
+  - Read
+  - Edit
+  - Grep
+  - Glob
+  - mcp__github__*
+model: opus
 ---
 
 # CI Monitoring

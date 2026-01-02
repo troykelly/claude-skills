@@ -1,6 +1,8 @@
 ---
 name: style-guide-adherence
 description: Use when writing code - follow Google style guides where available, otherwise follow established best practices for the language
+allowed-tools: []
+model: opus
 ---
 
 # Style Guide Adherence

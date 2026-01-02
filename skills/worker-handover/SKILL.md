@@ -1,17 +1,37 @@
 ---
 name: worker-handover
-description: Defines context handover format when workers hit turn limit. Creates structured handover files that enable replacement workers to continue seamlessly.
+description: Defines context handover format when workers hit turn limit. Posts structured handover to GitHub issue comments enabling replacement workers to continue seamlessly.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - mcp__github__*
+  - mcp__memory__*
+model: opus
 ---
 
 # Worker Handover
 
 ## Overview
 
-When workers approach their turn limit (100 turns), they must create a handover file that enables a replacement worker to continue without losing context.
+When workers approach their turn limit (100 turns), they must create a handover that enables a replacement worker to continue without losing context.
 
 **Core principle:** A replacement worker should understand the work as well as the original worker did.
 
-**Announce at start:** "I'm approaching my turn limit. Creating handover file for replacement worker."
+**Announce at start:** "I'm approaching my turn limit. Creating handover for replacement worker."
+
+## State Management
+
+**CRITICAL:** Handover context is stored in GitHub issue comments. NO local handover files.
+
+| State | Location | Purpose |
+|-------|----------|---------|
+| Handover context | Issue comment | Full context for replacement worker |
+| Git changes | Branch commits | Work completed so far |
+| Test status | Issue comment | Current test state |
+
+Handover survives crashes because it's in GitHub, not local files.
 
 ## When to Handover
 
@@ -22,23 +42,17 @@ When workers approach their turn limit (100 turns), they must create a handover 
 | 95+ | Complete handover, prepare to exit |
 | 100 | Exit (automatic) |
 
-## Handover File Location
+## Handover Format
 
-```
-.orchestrator/handover-[ISSUE].md
-```
-
-Or in worktree:
-```
-[WORKTREE]/.orchestrator/handover-[ISSUE].md
-```
-
-## Handover File Format
+Post to the issue with structured markers:
 
 ```markdown
+<!-- HANDOVER:START -->
+
 # Handover: Issue #[ISSUE]
 
 ## Metadata
+
 | Field | Value |
 |-------|-------|
 | Issue | #[ISSUE] |
@@ -49,6 +63,7 @@ Or in worktree:
 | Attempt | [N] |
 
 ## Issue Summary
+
 [Concise summary of what the issue requires - in your own words, not copied]
 
 ## Current State
@@ -59,9 +74,7 @@ Or in worktree:
 - **Last Commit:** `[COMMIT_HASH]` - [COMMIT_MESSAGE]
 
 ### Files Modified
-```
 [List of modified files with brief description of changes]
-```
 
 ### Tests Status
 - **Passing:** [N]
@@ -73,7 +86,6 @@ Or in worktree:
 ### Done
 - [x] [Completed task 1]
 - [x] [Completed task 2]
-- [x] [Completed task 3]
 
 ### In Progress
 - [ ] [Current task - describe state]
@@ -90,10 +102,8 @@ Or in worktree:
 
 ### Approaches Tried
 1. **[Approach]:** [Result/Why abandoned]
-2. **[Approach]:** [Result/Why abandoned]
 
 ### Important Discoveries
-- [Discovery that affects implementation]
 - [Discovery that affects implementation]
 
 ## Technical Notes
@@ -104,10 +114,6 @@ Or in worktree:
 ### Gotchas
 - [Thing that might trip up the next worker]
 - [Non-obvious behavior discovered]
-
-### Dependencies
-- [Library/package added and why]
-- [API endpoint used and how]
 
 ## Current Blocker (if any)
 [Description of what's blocking progress, if anything]
@@ -132,6 +138,8 @@ pnpm test
 
 ---
 *Handover created by [WORKER_ID] at [TIMESTAMP]*
+
+<!-- HANDOVER:END -->
 ```
 
 ## Creating a Handover
@@ -150,60 +158,71 @@ pnpm test 2>&1 | tail -20
 git diff --name-only HEAD~[N]
 ```
 
-### Step 2: Write Handover File
+### Step 2: Post Handover to Issue
 
 ```bash
-mkdir -p .orchestrator
+ISSUE=123
+WORKER_ID="worker-1234567890-123"
+BRANCH=$(git branch --show-current)
+LAST_COMMIT=$(git log -1 --format='%h - %s')
+COMMITS_AHEAD=$(git rev-list --count main..HEAD)
 
-cat > .orchestrator/handover-$ISSUE.md <<'EOF'
+gh issue comment "$ISSUE" --body "<!-- HANDOVER:START -->
+
 # Handover: Issue #$ISSUE
-...
-EOF
+
+## Metadata
+
+| Field | Value |
+|-------|-------|
+| Issue | #$ISSUE |
+| Previous Worker | $WORKER_ID |
+| Turns Used | 94/100 |
+| Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
+| Orchestration | $ORCHESTRATION_ID |
+
+## Current State
+
+### Branch Status
+- **Branch:** \`$BRANCH\`
+- **Commits:** $COMMITS_AHEAD commits ahead of main
+- **Last Commit:** \`$LAST_COMMIT\`
+
+[... rest of handover content ...]
+
+<!-- HANDOVER:END -->"
 ```
 
-### Step 3: Commit Handover
+### Step 3: Commit Any Uncommitted Work
 
 ```bash
-git add .orchestrator/handover-$ISSUE.md
-git commit -m "chore: Create handover file for issue #$ISSUE
+git add -A
+git commit -m "chore: Save progress before handover
 
 Worker $WORKER_ID reached turn limit.
-Context preserved for replacement worker.
+Handover posted to issue #$ISSUE.
 
-🤖 Worker: $WORKER_ID"
+Orchestrator: $ORCHESTRATION_ID"
 ```
 
-### Step 4: Notify in Issue
+### Step 4: Exit Gracefully
 
-```markdown
-🤖 **Handover Created** 🔄
-
-**Worker:** [WORKER_ID]
-**Turns Used:** [N]/100
-**Handover File:** `.orchestrator/handover-[ISSUE].md`
-
-**Work completed:**
-- [x] [Item 1]
-- [x] [Item 2]
-
-**Remaining:**
-- [ ] [Item 3]
-- [ ] [Item 4]
-
-A replacement worker will continue with full context.
-
----
-*Orchestration: [ORCHESTRATION_ID]*
-```
+Worker exits after posting handover. Orchestrator will spawn replacement.
 
 ## Receiving a Handover
 
-When a replacement worker starts with a handover file:
+When a replacement worker starts, it reads handover from issue comments:
 
-### Step 1: Read Handover
+### Step 1: Read Handover from GitHub
 
 ```bash
-cat .orchestrator/handover-$ISSUE.md
+ISSUE=123
+
+# Get latest handover from issue comments
+HANDOVER=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+  --jq '[.[] | select(.body | contains("<!-- HANDOVER:START -->"))] | last | .body')
+
+echo "$HANDOVER"
 ```
 
 ### Step 2: Verify State
@@ -222,10 +241,10 @@ pnpm test
 
 ### Step 3: Acknowledge Receipt
 
-Post to issue:
+Post acknowledgment to issue:
 
 ```markdown
-🤖 **Handover Received** ✅
+**Handover Received**
 
 **Replacement Worker:** [NEW_WORKER_ID]
 **Continuing from:** [PREVIOUS_WORKER_ID]
@@ -245,21 +264,21 @@ Post to issue:
 
 ### Step 4: Continue Work
 
-Follow the "Recommended Next Steps" from the handover file.
+Follow the "Recommended Next Steps" from the handover.
 
 ## Handover Quality Checklist
 
 Before creating handover:
 
 - [ ] All local changes committed
-- [ ] Handover file captures current state accurately
+- [ ] Handover captures current state accurately
 - [ ] Key decisions are documented
 - [ ] Gotchas are noted
 - [ ] Next steps are specific and actionable
 - [ ] Files to review are listed in priority order
 - [ ] Commands to run are tested and correct
-- [ ] Handover committed to branch
-- [ ] Issue comment posted
+- [ ] Handover posted to issue comment
+- [ ] Work committed to branch
 
 ## Bad Handover Examples
 
@@ -287,118 +306,14 @@ Before creating handover:
 
 ## Good Handover Example
 
-```markdown
-# Handover: Issue #142 - Dark Mode Support
-
-## Metadata
-| Field | Value |
-|-------|-------|
-| Issue | #142 |
-| Previous Worker | worker-1701523200-142 |
-| Turns Used | 94/100 |
-| Timestamp | 2025-12-02T15:30:00Z |
-| Orchestration | orch-2025-12-02-001 |
-| Attempt | 1 |
-
-## Issue Summary
-Add dark mode toggle to settings page. User preference should persist
-across sessions using localStorage. All components need to respect
-the theme context.
-
-## Current State
-
-### Branch Status
-- **Branch:** `feature/142-dark-mode-support`
-- **Commits:** 8 commits ahead of main
-- **Last Commit:** `a1b2c3d` - feat: Add ThemeContext and provider
-
-### Files Modified
-- `src/contexts/ThemeContext.tsx` - Theme context with dark/light modes
-- `src/components/Settings/ThemeToggle.tsx` - Toggle switch component
-- `src/hooks/useTheme.ts` - Hook for accessing theme
-- `src/styles/themes.ts` - Theme token definitions
-- `src/App.tsx` - Wrapped with ThemeProvider
-
-### Tests Status
-- **Passing:** 42
-- **Failing:** 3
-- **Coverage:** 78%
-
-## Work Completed
-
-### Done
-- [x] Created ThemeContext with dark/light mode support
-- [x] Implemented theme tokens (colors, shadows, etc.)
-- [x] Added ThemeProvider to App root
-- [x] Created useTheme hook
-- [x] Built ThemeToggle component
-- [x] Added localStorage persistence
-
-### In Progress
-- [ ] Fixing CSS variable application (3 tests failing)
-
-### Remaining
-- [ ] Update remaining components to use theme tokens
-- [ ] Add system preference detection
-- [ ] Add transition animations
-
-## Context & Decisions
-
-### Key Decisions Made
-1. **CSS Variables over styled-components theming:** Chose CSS variables
-   because they work with existing CSS and don't require wrapping all
-   components. Faster runtime switching.
-
-2. **localStorage over cookies:** Theme preference is client-only,
-   no need to send to server.
-
-### Approaches Tried
-1. **styled-components ThemeProvider:** Abandoned because existing
-   components use plain CSS. Would require rewriting all styles.
-
-### Important Discoveries
-- The `Header` component has hardcoded colors that need updating
-- Dark mode also needs to update the `<meta theme-color>` tag
-
-## Technical Notes
-
-### Architecture Notes
-Theme flows: ThemeProvider → useTheme hook → CSS variables on :root
-
-### Gotchas
-- CSS variables must be set on `:root`, not `body`
-- Some third-party components (DatePicker) ignore our theme
-
-### Dependencies
-- No new dependencies added
-- Using native CSS custom properties
-
-## Current Blocker
-Tests failing because CSS variables aren't being applied in test
-environment (jsdom). Need to mock or configure jsdom properly.
-
-## Recommended Next Steps
-1. Fix jsdom CSS variable issue - see https://github.com/jsdom/jsdom/issues/1895
-2. Update remaining components (Header, Footer, Sidebar)
-3. Add prefers-color-scheme media query detection
-
-## Files to Review First
-1. `src/contexts/ThemeContext.tsx` - Core theme logic
-2. `src/styles/themes.ts` - Token definitions
-3. `src/__tests__/ThemeContext.test.tsx` - Failing tests
-
-## Commands to Run
-```bash
-# Run failing tests
-pnpm test --grep "ThemeContext"
-
-# Start dev server to see current state
-pnpm dev
-```
-
----
-*Handover created by worker-1701523200-142 at 2025-12-02T15:30:00Z*
-```
+See the full format above for a complete, high-quality handover that includes:
+- Specific commit references
+- Test failure details
+- Decisions with rationale
+- Gotchas discovered
+- Actionable next steps
+- File priority list
+- Verified commands
 
 ## Integration
 
@@ -406,5 +321,6 @@ This skill is used by:
 - `worker-protocol` - Triggers handover creation
 - `worker-dispatch` - Provides handover to replacement workers
 
-This skill references:
-- `issue-lifecycle` - Issue comment format
+This skill uses:
+- GitHub issue comments for handover storage
+- Git for state verification

@@ -1,6 +1,14 @@
 ---
 name: session-start
 description: Use at the beginning of every work session - establishes context by checking GitHub project state, reading memory, verifying environment, and orienting before starting work
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - mcp__github__*
+  - mcp__memory__*
+model: opus
 ---
 
 # Session Start

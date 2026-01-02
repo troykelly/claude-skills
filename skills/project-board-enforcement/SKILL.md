@@ -1,6 +1,10 @@
 ---
 name: project-board-enforcement
 description: MANDATORY for all work - the project board is THE source of truth. This skill provides verification functions and gates that other skills MUST call. No work proceeds without project board compliance.
+allowed-tools:
+  - Bash
+  - mcp__github__*
+model: opus
 ---
 
 # Project Board Enforcement

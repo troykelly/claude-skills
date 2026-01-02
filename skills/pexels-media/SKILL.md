@@ -1,6 +1,11 @@
 ---
 name: pexels-media
 description: Source royalty-free images and videos from Pexels API for design, placeholders, or content. Supports search, curated/popular content, collections, multiple resolutions, and ALWAYS creates detailed sidecar metadata files.
+allowed-tools:
+  - Bash
+  - Write
+  - WebFetch
+model: opus
 ---
 
 # Pexels Media Sourcing

@@ -1,6 +1,11 @@
 ---
 name: environment-bootstrap
 description: Use for development environment setup - create and maintain init scripts, run smoke tests, ensure consistent environment across sessions
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+model: opus
 ---
 
 # Environment Bootstrap

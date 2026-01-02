@@ -1,6 +1,12 @@
 ---
 name: review-scope
 description: Use before code review - determine if change is minor (review new code only) or major (review impacted code too)
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - mcp__git__*
+model: opus
 ---
 
 # Review Scope

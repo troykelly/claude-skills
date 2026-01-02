@@ -1,6 +1,15 @@
 ---
 name: autonomous-orchestration
 description: Use when user requests autonomous operation across multiple issues. Orchestrates parallel workers, monitors progress, handles SLEEP/WAKE cycles, and works until scope is complete without user intervention.
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Task
+  - mcp__github__*
+  - mcp__memory__*
+model: opus
 ---
 
 # Autonomous Orchestration
@@ -17,15 +26,30 @@ Orchestrates long-running autonomous work across multiple issues, spawning paral
 
 - `worker-dispatch` skill for spawning workers
 - `worker-protocol` skill for worker behavior
-- `ci-monitor` skill for CI/WAKE handling
+- `ci-monitoring` skill for CI/WAKE handling
 - Git worktrees support (workers use isolated worktrees)
 - GitHub CLI (`gh`) authenticated
+- GitHub Project Board configured
+
+## State Management
+
+**CRITICAL:** All state is stored in GitHub. NO local state files.
+
+| State Store | Purpose | Used For |
+|-------------|---------|----------|
+| Project Board Status | THE source of truth | Ready, In Progress, In Review, Blocked, Done |
+| Issue Comments | Activity log | Worker assignment, progress, deviations |
+| Labels | Lineage only | `spawned-from:#N`, `depth:N`, `epic-*` |
+| MCP Memory | Fast cache | Read optimization (dual-write pattern) |
+
+**See:** `reference/state-management.md` for detailed state queries and updates.
 
 ## Immediate Start (User Consent Implied)
 
-**The user's request for autonomous operation IS their consent.** No additional confirmation is required.
+**The user's request for autonomous operation IS their consent.** No additional confirmation required.
 
 When the user requests autonomous work:
+
 1. **Identify scope** - Parse user request for milestone, epic, specific issues, or "all"
 2. **Announce intent** - Briefly state what you're about to do
 3. **Start immediately** - Begin orchestration without waiting for additional input
@@ -48,12 +72,10 @@ When the user requests autonomous operation without specifying a scope:
 
 ### Priority Order
 
-1. **User-specified scope** - If user mentions specific issues, epics, or milestones, use those
-2. **Urgent/High Priority standalone issues** - Issues with `priority:urgent` or `priority:high` labels that are NOT part of an epic
-3. **Epic-based sequential work** - Work through epics in order, completing all issues within each epic before moving to the next
+1. **User-specified scope** - If user mentions specific issues, epics, or milestones
+2. **Urgent/High Priority standalone issues** - Issues with `priority:urgent` or `priority:high` labels not part of an epic
+3. **Epic-based sequential work** - Work through epics in order, completing all issues within each epic
 4. **Remaining standalone issues** - Any issues not part of an epic
-
-### Scope Detection Logic
 
 ```bash
 detect_work_scope() {
@@ -69,7 +91,7 @@ detect_work_scope() {
     return
   fi
 
-  # 2. Get epics in order (by creation date or specified priority)
+  # 2. Get epics in order (by creation date)
   EPICS=$(gh issue list --state open --label "type:epic" \
     --json number,title,createdAt \
     --jq 'sort_by(.createdAt) | .[].number')
@@ -87,40 +109,6 @@ detect_work_scope() {
 }
 ```
 
-### Working Through Epics
-
-When working through epics sequentially:
-
-1. **Select first incomplete epic** - Find the epic with the earliest creation date that still has open child issues
-2. **Get all epic issues** - Query for issues with that epic's label
-3. **Work until epic complete** - All issues in the epic are closed
-4. **Move to next epic** - Repeat until all epics are complete
-5. **Then standalone issues** - Finally address any non-epic issues
-
-```bash
-get_next_epic_scope() {
-  # Find first epic with open issues
-  for epic_num in $(gh issue list --state open --label "type:epic" \
-    --json number,createdAt --jq 'sort_by(.createdAt) | .[].number'); do
-
-    # Get epic label
-    EPIC_LABEL=$(gh issue view "$epic_num" --json labels \
-      --jq '.labels[] | select(.name | startswith("epic-")) | .name')
-
-    # Check if epic has open issues
-    OPEN_COUNT=$(gh issue list --state open --label "$EPIC_LABEL" \
-      --json number --jq 'length')
-
-    if [ "$OPEN_COUNT" -gt 0 ]; then
-      echo "$EPIC_LABEL"
-      return
-    fi
-  done
-
-  echo ""  # No epics with open issues
-}
-```
-
 ## Continuous Operation Until Complete
 
 Autonomous operation continues until ALL of:
@@ -134,936 +122,156 @@ The operation does NOT pause for:
 - Switching between epics
 - Any user input (unless blocked by a fatal error)
 
-## State Management (Project Board is THE Source of Truth)
-
-**Core principle:** The GitHub Project Board is the ONLY source of truth for work state. NOT labels. NOT comments. The project board.
-
-State is tracked via:
-1. **GitHub Project Board Status Field** - THE source of truth for all state
-2. **GitHub Issue Comments** - Activity log and context (supplementary)
-3. **Labels** - Only for lineage tracking, NOT for state
-
-### Project Board Status Field (THE Source of Truth)
-
-| Status | Description | Transition From |
-|--------|-------------|-----------------|
-| Backlog | Not ready for work | (initial) |
-| Ready | Ready for work, pending assignment | Backlog |
-| In Progress | Worker assigned and working | Ready, Blocked |
-| In Review | PR created, awaiting merge | In Progress |
-| Blocked | Cannot proceed | Any |
-| Done | Completed | In Review |
-
-### Labels (Supplementary Only - NOT for State)
-
-| Label | Purpose | NOT Used For |
-|-------|---------|--------------|
-| `review-finding` | Origin tracking | State |
-| `spawned-from:#N` | Lineage tracking | State |
-| `depth:N` | Recursion limit | State |
-| `epic-[name]` | Epic grouping | State |
-
-**CRITICAL:** Do NOT use labels like `status:pending` or `status:in-progress`. Use the project board.
-
-### State Queries via Project Board
-
-```bash
-# Get pending issues in scope (Status = Ready)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
-
-# Get in-progress issues (Status = In Progress)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
-
-# Get blocked issues (Status = Blocked)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
-
-# Get issues in review (Status = In Review)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
-
-# Count by status
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq '[.items[] | select(.status.name == "In Progress")] | length'
-
-# Get child issues via label (lineage only, not state)
-gh issue list --label "spawned-from:#123" --json number,state --jq '.'
-```
-
-### State Updates via Project Board
-
-```bash
-# Helper function to update project board status
-update_project_status() {
-  local issue=$1
-  local new_status=$2  # Ready, In Progress, In Review, Blocked, Done
-
-  # Get item ID
-  ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".items[] | select(.content.number == $issue) | .id")
-
-  if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
-    echo "ERROR: Issue #$issue not in project board. Add it first."
-    return 1
-  fi
-
-  # Get project and field IDs
-  PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
-    jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
-
-  STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.fields[] | select(.name == "Status") | .id')
-
-  OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".fields[] | select(.name == \"Status\") | .options[] | select(.name == \"$new_status\") | .id")
-
-  # Update status
-  gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-    --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
-
-  # Verify update
-  ACTUAL=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".items[] | select(.content.number == $issue) | .status.name")
-
-  if [ "$ACTUAL" != "$new_status" ]; then
-    echo "ERROR: Status update failed. Expected $new_status, got $ACTUAL"
-    return 1
-  fi
-
-  echo "Updated issue #$issue status to $new_status"
-  return 0
-}
-
-### Orchestration Comment Template
-
-Post to milestone/epic tracking issue:
-
-```markdown
-## Orchestration Status
-
-**ID:** orch-[TIMESTAMP]
-**Scope:** [MILESTONE/EPIC]
-**Started:** [ISO_TIMESTAMP]
-**Last Update:** [ISO_TIMESTAMP]
-
-### Queue Status
-
-| Status | Count | Issues |
-|--------|-------|--------|
-| Pending | [N] | #1, #2, #3 |
-| In Progress | [N] | #4, #5 |
-| Awaiting Dependencies | [N] | #6 (→ #7, #8) |
-| Completed | [N] | #9, #10 |
-| Blocked | [N] | #11 |
-
-### Active Workers
-
-| Worker | Issue | Started | Status |
-|--------|-------|---------|--------|
-| worker-001 | #4 | [TIME] | Implementing |
-| worker-002 | #5 | [TIME] | In Review |
-
-### Deviation Tracking
-
-Issues requiring return after child completion:
-
-| Parent | Status | Children | Return When |
-|--------|--------|----------|-------------|
-| #6 | Awaiting | #7, #8 | All children closed |
-
----
-*Updated: [TIMESTAMP]*
-```
-
-### Deviation Handling
-
-When a worker creates child issues (e.g., deferred review findings):
-
-1. Mark parent with `status:awaiting-dependencies`
-2. Add `spawned-from:#PARENT` label to children
-3. Add `depth:N` label (N = parent_depth + 1)
-4. Post deviation comment to parent issue:
-
-```markdown
-## Deviation: Awaiting Child Issues
-
-**Status:** `awaiting-dependencies`
-**Return When:** All children closed
-
-### Child Issues Created
-
-| # | Title | Created From | Status |
-|---|-------|--------------|--------|
-| #7 | [Title] | Review finding | Open |
-| #8 | [Title] | Review finding | Open |
-
-**Process:** Children follow full `issue-driven-development` workflow.
-When all children are closed, this issue will be resumed.
-
----
-*Worker: [WORKER_ID]*
-```
-
-### Child Issue Lifecycle
-
-**CRITICAL:** Child issues (from review findings) MUST follow the FULL `issue-driven-development` process:
-
-1. They get their own workers
-2. They go through all 13 steps
-3. They have their own code reviews
-4. Their findings create grandchildren if needed
-5. They cannot skip any workflow step
-
-The `depth:N` label tracks lineage to prevent infinite loops (max depth: 5).
-
-### Deviation Resolution
-
-When monitoring for deviation resolution:
-
-```bash
-# Check if all children of #123 are closed
-OPEN_CHILDREN=$(gh issue list --label "spawned-from:#123" --state open --json number --jq 'length')
-
-if [ "$OPEN_CHILDREN" = "0" ]; then
-  # All children closed, resume parent
-  gh issue edit 123 --remove-label "status:awaiting-dependencies" --add-label "status:pending"
-  gh issue comment 123 --body "## Deviation Resolved
-
-All child issues are now closed. This issue is ready to resume.
-
-**Children Completed:**
-$(gh issue list --label "spawned-from:#123" --state closed --json number,title --jq '.[] | "- #\(.number): \(.title)"')
-
----
-*Orchestrator: [ORCHESTRATION_ID]*"
-fi
-```
-
 ## Orchestration Loop
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              MAIN LOOP                                       │
-└─────────────────────────────────────────┬───────────────────────────────────┘
-                                          │
-        ┌─────────────────────────────────┼─────────────────────────────────┐
-        ▼                                 ▼                                 ▼
-┌───────────────┐               ┌───────────────┐               ┌───────────────┐
-│ CHECK WORKERS │               │ CHECK CI/PRs  │               │ SPAWN/MANAGE  │
-│               │               │               │               │               │
-│ - Still alive?│               │ - CI status?  │               │ - Capacity?   │
-│ - Completed?  │               │ - Ready merge?│               │ - Next issue? │
-│ - Handover?   │               │ - Failed?     │               │ - Spawn worker│
-│ - Failed?     │               │               │               │               │
-└───────┬───────┘               └───────┬───────┘               └───────┬───────┘
-        │                               │                               │
-        └───────────────────────────────┼───────────────────────────────┘
-                                        │
-                                        ▼
-                              ┌───────────────────┐
-                              │ EVALUATE STATE    │
-                              │                   │
-                              │ All done? → Exit  │
-                              │ All waiting? →    │
-                              │   SLEEP           │
-                              │ Work to do? →     │
-                              │   Continue        │
-                              └───────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                       MAIN LOOP                          │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+      ┌───────────────────┼───────────────────┐
+      ▼                   ▼                   ▼
+┌───────────┐      ┌───────────┐      ┌───────────┐
+│ CHECK     │      │ CHECK     │      │ SPAWN     │
+│ WORKERS   │      │ CI/PRs    │      │ WORKERS   │
+└─────┬─────┘      └─────┬─────┘      └─────┬─────┘
+      │                  │                  │
+      └──────────────────┼──────────────────┘
+                         │
+                         ▼
+               ┌───────────────────┐
+               │ EVALUATE STATE    │
+               │                   │
+               │ All done? → Exit  │
+               │ Waiting? → SLEEP  │
+               │ Work? → Continue  │
+               └───────────────────┘
 ```
 
-### Loop Implementation (Project Board-Native)
+**See:** `reference/loop-implementation.md` for full loop code.
 
-```bash
-# Helper functions using PROJECT BOARD as state store (NOT labels)
+### Loop Steps
 
-get_pending_issues() {
-  # Query project board for Status = Ready
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
-}
-
-get_in_progress_issues() {
-  # Query project board for Status = In Progress
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
-}
-
-get_blocked_issues() {
-  # Query project board for Status = Blocked
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
-}
-
-get_in_review_issues() {
-  # Query project board for Status = In Review
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
-}
-
-check_deviation_resolution() {
-  local issue=$1
-  # Check if all children (via label) are closed
-  local open_children=$(gh issue list --label "spawned-from:#$issue" --state open --json number --jq 'length')
-  if [ "$open_children" = "0" ]; then
-    # All children closed, resume parent via PROJECT BOARD (not labels)
-    update_project_status "$issue" "Ready"
-
-    gh issue comment "$issue" --body "## Deviation Resolved
-
-All child issues are now closed. Ready to resume.
-
-**Project Status:** Ready (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-    return 0
-  fi
-  return 1
-}
-
-mark_issue_in_progress() {
-  local issue=$1
-  local worker=$2
-
-  # Update PROJECT BOARD status (not labels)
-  update_project_status "$issue" "In Progress"
-
-  gh issue comment "$issue" --body "## Worker Assigned
-
-**Worker:** \`$worker\`
-**Started:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-**Project Status:** In Progress (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-}
-
-mark_issue_in_review() {
-  local issue=$1
-  local pr=$2
-
-  # Update PROJECT BOARD status
-  update_project_status "$issue" "In Review"
-
-  gh issue comment "$issue" --body "## PR Created
-
-**PR:** #$pr
-**Project Status:** In Review (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-}
-
-mark_issue_blocked() {
-  local issue=$1
-  local reason=$2
-
-  # Update PROJECT BOARD status
-  update_project_status "$issue" "Blocked"
-
-  gh issue comment "$issue" --body "## Issue Blocked
-
-**Reason:** $reason
-**Project Status:** Blocked (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-}
-
-mark_issue_done() {
-  local issue=$1
-
-  # Update PROJECT BOARD status
-  update_project_status "$issue" "Done"
-
-  gh issue comment "$issue" --body "## Issue Complete
-
-**Project Status:** Done (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-}
-
-# Main orchestration loop
-while true; do
-  # Post status update to tracking issue
-  post_orchestration_status
-
-  # ─────────────────────────────────────────────────────────────
-  # 1. CHECK FOR ISSUES NEEDING STATUS SYNC
-  # ─────────────────────────────────────────────────────────────
-  # Check if any issues with open children need to be resumed
-  for issue in $(gh issue list --label "spawned-from:" --state closed --json number --jq '.[].number' 2>/dev/null | sort -u); do
-    parent=$(gh issue view "$issue" --json labels --jq '.labels[] | select(.name | startswith("spawned-from:")) | .name' | sed 's/spawned-from:#//')
-    if [ -n "$parent" ]; then
-      check_deviation_resolution "$parent"
-    fi
-  done
-
-  # ─────────────────────────────────────────────────────────────
-  # 2. CHECK CI/PRs (with review verification)
-  # ─────────────────────────────────────────────────────────────
-  for pr in $(gh pr list --json number --jq '.[].number'); do
-    ci_status=$(gh pr checks "$pr" --json state --jq '.[].state' | sort -u)
-
-    if echo "$ci_status" | grep -q "SUCCESS"; then
-      # Verify review artifact exists before merge
-      ISSUE=$(gh pr view "$pr" --json body --jq '.body' | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+')
-      REVIEW_EXISTS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
-        --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length' 2>/dev/null || echo "0")
-
-      if [ "$REVIEW_EXISTS" = "0" ]; then
-        gh pr comment "$pr" --body "⚠️ **Merge Blocked:** No review artifact found in issue #$ISSUE.
-
-Complete \`comprehensive-review\` and post artifact to issue before merge."
-        continue
-      fi
-
-      if [ "$AUTO_MERGE" = "true" ]; then
-        gh pr merge "$pr" --squash --auto
-
-        # Update project board status to Done
-        mark_issue_done "$ISSUE"
-
-        gh issue comment "$ISSUE" --body "## PR Merged
-
-PR #$pr merged automatically after CI passed.
-
-**Project Status:** Done (updated in project board)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-      fi
-    elif echo "$ci_status" | grep -q "FAILURE"; then
-      handle_ci_failure "$pr"
-    fi
-  done
-
-  # ─────────────────────────────────────────────────────────────
-  # 3. SPAWN NEW WORKERS (respecting capacity)
-  # ─────────────────────────────────────────────────────────────
-  # Count via PROJECT BOARD (not labels)
-  active_count=$(get_in_progress_issues | wc -l | tr -d ' ')
-
-  while [ "$active_count" -lt 5 ]; do
-    # Get next issue from PROJECT BOARD (not labels)
-    next_issue=$(get_pending_issues | head -1)
-
-    if [ -z "$next_issue" ]; then
-      break  # No more issues to work
-    fi
-
-    worker_id="worker-$(date +%s)-$next_issue"
-
-    # Update PROJECT BOARD status before spawning
-    mark_issue_in_progress "$next_issue" "$worker_id"
-
-    spawn_worker "$next_issue" "$worker_id"
-    active_count=$((active_count + 1))
-  done
-
-  # ─────────────────────────────────────────────────────────────
-  # 4. EVALUATE STATE (via PROJECT BOARD)
-  # ─────────────────────────────────────────────────────────────
-  # All counts come from PROJECT BOARD, not labels
-  pending=$(get_pending_issues | wc -l | tr -d ' ')
-  in_progress=$(get_in_progress_issues | wc -l | tr -d ' ')
-  in_review=$(get_in_review_issues | wc -l | tr -d ' ')
-  blocked=$(get_blocked_issues | wc -l | tr -d ' ')
-  open_prs=$(gh pr list --json number --jq 'length')
-
-  if [ "$pending" -eq 0 ] && [ "$in_progress" -eq 0 ] && [ "$in_review" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
-    # All done!
-    complete_orchestration
-    exit 0
-  fi
-
-  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$open_prs" -gt 0 ]; then
-    # Nothing to do but wait for CI
-    enter_sleep "waiting_for_ci"
-    exit 0  # Will be woken by wake mechanism
-  fi
-
-  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$blocked" -gt 0 ]; then
-    # All remaining work is blocked
-    enter_sleep "all_remaining_blocked"
-    exit 0
-  fi
-
-  # ─────────────────────────────────────────────────────────────
-  # 5. BRIEF PAUSE BEFORE NEXT ITERATION
-  # ─────────────────────────────────────────────────────────────
-  sleep 30  # Check every 30 seconds when active
-done
-```
+1. **Check Deviation Resolution** - Resume issues whose children are all closed
+2. **Check CI/PRs** - Monitor for merge readiness, verify review artifacts
+3. **Spawn Workers** - Up to 5 parallel workers from Ready queue
+4. **Evaluate State** - Determine next action (continue, sleep, complete)
+5. **Brief Pause** - 30 second interval between iterations
 
 ## Scope Types
 
 ### Milestone
 
 ```bash
-# Get issues in milestone
 gh issue list --milestone "v1.0.0" --state open --json number --jq '.[].number'
 ```
 
 ### Epic
 
 ```bash
-# Get issues with epic label
 gh issue list --label "epic-dark-mode" --state open --json number --jq '.[].number'
-```
-
-### Issue List
-
-```bash
-# Explicit list
-ISSUES="123 124 125 126"
 ```
 
 ### Unbounded (All Open Issues)
 
-When user requests autonomous work without specifying scope, or explicitly asks to work on "everything" or "all issues":
-
-```markdown
-## Starting Unbounded Autonomous Operation
-
-**Scope:** All open issues in repository
-**Workers:** Up to 5 parallel
-**Mode:** Continuous until all issues resolved or blocked
-
-Beginning with priority/urgent issues, then working through epics sequentially...
+```bash
+gh issue list --state open --json number --jq '.[].number'
 ```
 
 **Do NOT ask for "UNBOUNDED" confirmation.** The user's request is their consent.
 
-```bash
-# All open issues
-gh issue list --state open --json number --jq '.[].number'
-```
-
 ## Failure Handling
 
-### Retry with Research
-
-Workers that fail do NOT immediately become blocked. The cycle is:
+Workers that fail do NOT immediately become blocked:
 
 ```
-Attempt 1 (Failed)
-       │
-       ▼
-Research Cycle 1 (via research-after-failure skill)
-       │
-       ▼
-Attempt 2 (Failed)
-       │
-       ▼
-Research Cycle 2 (deeper research)
-       │
-       ▼
-Attempt 3 (Failed)
-       │
-       ▼
-Research Cycle 3 (exhaustive research)
-       │
-       ▼
-Attempt 4 (Failed)
-       │
-       ▼
-ONLY NOW: Mark as Blocked
+Attempt 1 → Research → Attempt 2 → Research → Attempt 3 → Research → Attempt 4 → BLOCKED
 ```
 
-### Research Cycle Implementation
+Only after 3+ research cycles is an issue marked as blocked.
 
-```bash
-trigger_research_cycle() {
-  worker=$1
-  issue=$(get_worker_issue "$worker")
-  cycle=$(get_research_cycle_count "$issue")
-
-  # Spawn research worker (read-only tools)
-  claude -p "$(cat <<PROMPT
-You are a research agent investigating why issue #$issue is failing.
-
-## Research Cycle: $((cycle + 1))
-
-## Previous Attempts
-$(get_attempt_history "$issue")
-
-## Your Task
-1. Analyze the failure logs
-2. Research the problem thoroughly
-3. Document findings in issue #$issue
-4. Propose a new approach
-
-## Constraints
-- You are READ-ONLY - do not modify code
-- Focus on understanding, not fixing
-- Be thorough - this is attempt $((cycle + 1))
-
-Begin by reading the worker logs and issue comments.
-PROMPT
-)" \
-    --allowedTools "Read,Grep,Glob,WebFetch,WebSearch,mcp__memory__*" \
-    --max-turns 50 \
-    --output-format json \
-    > ".orchestrator/logs/research-$issue-$cycle.log" 2>&1
-
-  # After research, spawn new worker with research context
-  increment_research_cycle "$issue"
-  spawn_worker "$issue" --with-research-context
-}
-```
+**See:** `reference/failure-recovery.md` for research cycle implementation.
 
 ### Blocked Determination
 
 An issue is only marked blocked when:
-
-1. Multiple research cycles completed (3+)
-2. Research concludes "impossible without external input"
-3. Examples of true blockers:
-   - Missing API credentials
-   - Requires decision from human
-   - External service unavailable
-   - Dependency on unreleased feature
-
-```bash
-mark_issue_blocked() {
-  issue=$1
-  reason=$2
-
-  gh issue comment "$issue" --body "## 🚫 Issue Blocked
-
-**Reason:** $reason
-
-**Attempts:** $(get_attempt_count "$issue")
-**Research Cycles:** $(get_research_cycle_count "$issue")
-
-**Why Blocked:**
-This issue cannot proceed without external intervention.
-
-**Required Action:**
-$reason
-
----
-*Orchestration ID: $ORCHESTRATION_ID*"
-
-  gh issue edit "$issue" --add-label "blocked"
-  update_queue_blocked "$issue"
-}
-```
-
-## Git Worktree Isolation
-
-Workers use separate git worktrees to avoid conflicts:
-
-```bash
-# Create worktree for worker
-create_worker_worktree() {
-  issue=$1
-  worker_id=$2
-  branch="feature/$issue-$(slugify_issue_title "$issue")"
-  worktree_path="../$(basename $PWD)-worker-$issue"
-
-  # Create branch if not exists
-  git branch "$branch" 2>/dev/null || true
-
-  # Create worktree
-  git worktree add "$worktree_path" "$branch"
-
-  echo "$worktree_path"
-}
-
-# Cleanup worktree after worker done
-cleanup_worker_worktree() {
-  worktree_path=$1
-
-  # Remove worktree
-  git worktree remove "$worktree_path" --force
-
-  # Prune worktree references
-  git worktree prune
-}
-```
+- Multiple research cycles completed (3+)
+- Research concludes "impossible without external input"
+- Examples: missing credentials, requires human decision, external service down
 
 ## SLEEP/WAKE
 
 ### Entering SLEEP
 
-```bash
-enter_sleep() {
-  reason=$1
+Orchestration sleeps when:
+- All issues are either blocked or in review
+- No work can proceed without external event
 
-  # Post sleep status to tracking issue (GitHub-native)
-  TRACKING_ISSUE=$(gh issue list --label "orchestration-tracking" --json number --jq '.[0].number')
-  WAITING_PRS=$(gh pr list --json number --jq '[.[].number] | join(", ")')
-  WAITING_CHILDREN=$(gh issue list --label "status:awaiting-dependencies" --json number --jq '[.[].number] | join(", ")')
-
-  gh issue comment "$TRACKING_ISSUE" --body "## Orchestration Sleeping
-
-**Reason:** $reason
-**Since:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-### Waiting On
-
-| Type | Items |
-|------|-------|
-| PRs in CI | $WAITING_PRS |
-| Child Issues | $WAITING_CHILDREN |
-
-### Wake Mechanisms
-
-- **Polling:** Every 5 minutes
-- **Manual:** \`claude --resume $RESUME_SESSION\`
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-
-  # Report to user
-  echo "## Orchestration Sleeping"
-  echo ""
-  echo "**Reason:** $reason"
-  echo "**Waiting on PRs:** $WAITING_PRS"
-  echo "**Waiting on children:** $WAITING_CHILDREN"
-  echo ""
-  echo "Wake mechanisms active:"
-  echo "- Polling: Every 5 minutes"
-  echo "- Manual: claude --resume $RESUME_SESSION"
-}
-```
+State is posted to GitHub tracking issue (survives crashes).
 
 ### WAKE Mechanisms
 
-See `ci-monitor` skill for detailed WAKE implementations:
-- Polling script
-- SessionStart hook
-- Webhook server (with port safety)
-
-## Status Reporting (GitHub-Native)
-
-Status is posted as a comment on the tracking issue:
-
-```bash
-post_orchestration_status() {
-  TRACKING_ISSUE=$(gh issue list --label "orchestration-tracking" --json number --jq '.[0].number')
-
-  # Query all state from GitHub
-  PENDING=$(gh issue list --milestone "$MILESTONE" --label "status:pending" --json number --jq '[.[].number] | join(", ")')
-  IN_PROGRESS=$(gh issue list --milestone "$MILESTONE" --label "status:in-progress" --json number,title --jq '.[] | "| #\(.number) | \(.title) |"')
-  AWAITING=$(gh issue list --milestone "$MILESTONE" --label "status:awaiting-dependencies" --json number --jq '[.[].number] | join(", ")')
-  BLOCKED=$(gh issue list --milestone "$MILESTONE" --label "status:blocked" --json number --jq '[.[].number] | join(", ")')
-  COMPLETED=$(gh issue list --milestone "$MILESTONE" --state closed --json number --jq '[.[].number] | join(", ")')
-  OPEN_PRS=$(gh pr list --json number,title,statusCheckRollup --jq '.[] | "| #\(.number) | \(.title) | \(.statusCheckRollup | map(.state) | unique | join(",")) |"')
-
-  gh issue comment "$TRACKING_ISSUE" --body "## Orchestration Status
-
-**ID:** $ORCHESTRATION_ID
-**Scope:** $MILESTONE
-**Updated:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-### Issue Status
-
-| Status | Issues |
-|--------|--------|
-| Pending | $PENDING |
-| In Progress | (see below) |
-| Awaiting Dependencies | $AWAITING |
-| Blocked | $BLOCKED |
-| Completed | $COMPLETED |
-
-### Active Workers
-
-| Issue | Title |
-|-------|-------|
-$IN_PROGRESS
-
-### Open PRs
-
-| PR | Title | CI Status |
-|----|-------|-----------|
-$OPEN_PRS
-
-### Deviation Tracking
-
-Issues waiting on children:
-
-\`\`\`
-$(for issue in $(gh issue list --label "status:awaiting-dependencies" --json number --jq '.[].number'); do
-  children=$(gh issue list --label "spawned-from:#$issue" --state open --json number --jq '[.[].number] | join(", ")')
-  echo "#$issue → waiting on: $children"
-done)
-\`\`\`
-
----
-*Updated automatically by orchestrator*"
-}
-```
-
-### Progress Display (Posted to Tracking Issue)
-
-```markdown
-## Orchestration Status
-
-**ID:** orch-2025-12-02-001
-**Scope:** Milestone v1.0.0
-**Updated:** 2025-12-02T14:30:00Z
-
-### Issue Status
-
-| Status | Issues |
-|--------|--------|
-| Pending | #149, #150, #151 |
-| In Progress | (see below) |
-| Awaiting Dependencies | #146 |
-| Blocked | #148 |
-| Completed | #135, #136, #137, #138, #139, #140, #141, #147 |
-
-### Active Workers
-
-| Issue | Title |
-|-------|-------|
-| #142 | Add dark mode toggle |
-| #143 | Export functionality |
-| #144 | Settings page redesign |
-| #145 | API rate limiting |
-
-### Open PRs
-
-| PR | Title | CI Status |
-|----|-------|-----------|
-| #201 | feat: Dark mode (#142) | PENDING |
-| #202 | feat: Export (#143) | SUCCESS |
-
-### Deviation Tracking
-
-Issues waiting on children:
-
-```
-#146 → waiting on: #152, #153
-```
-
----
-*Updated automatically by orchestrator*
-```
-
-## Abort Handling
-
-```markdown
-User: STOP
-
-## Aborting Orchestration
-
-1. Signaling workers to save state and exit...
-2. Workers completing current operation (max 60s)...
-3. Saving orchestration state...
-4. Preserving worktrees for inspection...
-
-**State Saved**
-
-Resume: `claude --resume [SESSION_ID]`
-Clean up worktrees: `git worktree prune`
-
-**Worker states at abort:**
-| Worker | Issue | Status | Can Resume |
-|--------|-------|--------|------------|
-| w-012 | #142 | Mid-implementation | Yes |
-| w-013 | #143 | Testing | Yes |
-```
-
-## Rollback (Safety Net)
-
-Auto-merge is enabled with git rollback as the safety net:
-
-```bash
-rollback_pr() {
-  pr=$1
-  merge_commit=$(gh pr view "$pr" --json mergeCommit --jq '.mergeCommit.oid')
-
-  if [ -n "$merge_commit" ]; then
-    git revert "$merge_commit" --no-edit
-    git push
-
-    gh issue comment "$(get_pr_issue "$pr")" --body "## ⚠️ PR Reverted
-
-PR #$pr was automatically reverted due to post-merge issues.
-
-**Reverted commit:** $merge_commit
-**Reason:** [REASON]
-
-Issue will be re-queued for another attempt."
-
-    requeue_issue "$(get_pr_issue "$pr")"
-  fi
-}
-```
+- **SessionStart hook** - Checks CI status on new Claude session
+- **Manual** - `claude --resume [SESSION_ID]`
 
 ## Checklist
 
 Before starting orchestration:
 
-- [ ] User requested autonomous operation (no additional confirmation needed)
-- [ ] Scope identified (explicit from user, or defaulting to priority/urgent then epics)
-- [ ] Scope validated (issues exist and are actionable)
+- [ ] Scope identified (explicit or auto-detected)
 - [ ] Git worktrees available (`git worktree list`)
 - [ ] GitHub CLI authenticated (`gh auth status`)
 - [ ] No uncommitted changes in main worktree
-- [ ] Required labels created (`scripts/create-labels.sh`)
-- [ ] Tracking issue created with `orchestration-tracking` label
+- [ ] Tracking issue exists with `orchestration-tracking` label
+- [ ] Project board configured with Status field
 
 During orchestration:
 
 - [ ] Workers spawned with worktree isolation
-- [ ] Worker status tracked via GitHub labels
+- [ ] Worker status tracked via Project Board (NOT labels)
 - [ ] CI status monitored
 - [ ] Review artifacts verified before PR merge
 - [ ] Failed workers trigger research cycles
 - [ ] Handovers happen at turn limit
-- [ ] SLEEP entered when only waiting on CI or children
+- [ ] SLEEP entered when only waiting on CI
 - [ ] Deviation resolution checked each loop
-- [ ] Child issues follow full `issue-driven-development` process
 - [ ] Status posted to tracking issue
 
 ## Review Enforcement
 
 **CRITICAL:** The orchestrator verifies review compliance:
 
-1. Before allowing PR merge:
+1. **Before PR merge:**
    - Review artifact exists in issue comments
    - Review status is COMPLETE
    - Unaddressed findings = 0
 
-2. Child issues (from deferred findings):
+2. **Child issues (from deferred findings):**
    - Follow full `issue-driven-development` process
    - Have their own code reviews
-   - Cannot skip workflow steps
    - Track via `spawned-from:#N` label
 
-3. Deviation handling:
-   - Parent marked `status:awaiting-dependencies`
+3. **Deviation handling:**
+   - Parent status set to Blocked on project board
    - Resumes only when all children closed
-   - Orchestrator monitors deviation resolution
 
 ## Integration
 
 This skill coordinates:
-- `worker-dispatch` - Spawning workers
-- `worker-protocol` - Worker behavior (includes review gate)
-- `worker-handover` - Context passing
-- `ci-monitor` - CI and WAKE handling
-- `research-after-failure` - Research cycles
-- `issue-driven-development` - Worker follows this (all 13 steps)
-- `comprehensive-review` - Workers must complete before PR
-- `apply-all-findings` - All findings addressed
-- `deferred-finding` - Child issue creation
-- `review-gate` - PR creation verification
-- **`project-board-enforcement`** - ALL state queries and updates
 
-This skill uses **PROJECT BOARD as the source of truth**:
-- **Project Board Status field** - THE source of truth for all state
-- Issue comments for activity log (supplementary)
-- `spawned-from:#N` labels for lineage (supplementary, NOT for state)
-- `depth:N` labels for recursion limit (supplementary)
-- Tracking issue for orchestration status
+| Skill | Purpose |
+|-------|---------|
+| `worker-dispatch` | Spawning workers |
+| `worker-protocol` | Worker behavior |
+| `worker-handover` | Context passing |
+| `ci-monitoring` | CI and WAKE handling |
+| `research-after-failure` | Research cycles |
+| `issue-driven-development` | Worker follows this |
+| `comprehensive-review` | Workers must complete before PR |
+| `project-board-enforcement` | ALL state queries and updates |
 
-**CRITICAL:** Do NOT use labels for state tracking. Use project board.
+## Reference Files
+
+- `reference/state-management.md` - State queries, updates, deviation handling
+- `reference/loop-implementation.md` - Full loop code and helpers
+- `reference/failure-recovery.md` - Research cycles, blocked handling, SLEEP/WAKE

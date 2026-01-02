@@ -1,6 +1,12 @@
 ---
 name: comprehensive-review
 description: Use after implementing features - 7-criteria code review with MANDATORY artifact posting to GitHub issue; blocks PR creation until complete
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - mcp__github__*
+model: opus
 ---
 
 # Comprehensive Review

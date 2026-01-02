@@ -1,6 +1,12 @@
 ---
 name: work-intake
 description: Entry point for ALL work requests - triages scope from trivial to massive, asks clarifying questions, and routes to appropriate planning skills. Use this when receiving any new work request.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - mcp__github__*
+model: opus
 ---
 
 # Work Intake

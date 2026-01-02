@@ -383,7 +383,14 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 | [`worker-dispatch`](skills/worker-dispatch/SKILL.md) | Protocol | Spawn isolated worker processes in git worktrees |
 | [`worker-protocol`](skills/worker-protocol/SKILL.md) | Contract | Behavioral protocol for spawned worker agents |
 | [`worker-handover`](skills/worker-handover/SKILL.md) | Protocol | Context transfer when workers hit turn limits |
-| [`ci-monitor`](skills/ci-monitor/SKILL.md) | Protocol | CI monitoring with SLEEP/WAKE via polling, hooks, and webhooks |
+
+### Documentation Enforcement
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`api-documentation`](skills/api-documentation/SKILL.md) | Gate | Enforce Swagger/OpenAPI sync on API changes |
+| [`features-documentation`](skills/features-documentation/SKILL.md) | Gate | Enforce features.md sync on user-facing changes |
+| [`documentation-audit`](skills/documentation-audit/SKILL.md) | Remediation | Comprehensive documentation sync when drift detected |
 
 ---
 

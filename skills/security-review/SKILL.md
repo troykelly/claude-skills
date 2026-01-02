@@ -1,6 +1,12 @@
 ---
 name: security-review
 description: MANDATORY for security-sensitive code changes - OWASP-based security review with dedicated checklist, required before PR for auth, input handling, API, database, or credential code
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - mcp__github__*
+model: opus
 ---
 
 # Security Review

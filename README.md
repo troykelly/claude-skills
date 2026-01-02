@@ -216,17 +216,35 @@ For long-running autonomous operation that survives crashes and continues until 
 ### Quick Start Command
 
 ```bash
-# Generate session ID, sync repo, and start autonomous operation with crash recovery
+# Generate session ID, sync repo, and start autonomous operation with intelligent crash recovery
 SESSION_ID=$(uuidgen || cat /proc/sys/kernel/random/uuid) && \
 echo "$(date -Iseconds) ${SESSION_ID}" >> /tmp/claude-sessions.txt && \
 git fetch && git checkout main && git pull && clear && \
 echo "Session ID: ${SESSION_ID}" && \
+CRASH_TIMES=() && \
+CRASH_WINDOW=60 && \
+CRASH_THRESHOLD=3 && \
 claude --dangerously-skip-permissions --session-id "${SESSION_ID}" \
   "Use your issue driven development skill to work wholly autonomously until all issues and epics are complete." || \
-while ! claude --dangerously-skip-permissions --resume "${SESSION_ID}" \
-  "You crashed - continue where you left off"; do \
-  echo "Restarting... (Session: ${SESSION_ID})"; \
-  sleep 3; \
+while true; do \
+  NOW=$(date +%s) && \
+  CRASH_TIMES+=("$NOW") && \
+  RECENT_CRASHES=0 && \
+  for T in "${CRASH_TIMES[@]}"; do \
+    if (( NOW - T < CRASH_WINDOW )); then \
+      ((RECENT_CRASHES++)); \
+    fi; \
+  done && \
+  if (( RECENT_CRASHES >= CRASH_THRESHOLD )); then \
+    echo "⚠️  Rapid crash loop detected ($RECENT_CRASHES crashes in ${CRASH_WINDOW}s)"; \
+    MSG="CRITICAL: You have crashed $RECENT_CRASHES times in the last ${CRASH_WINDOW} seconds. This indicates a crash loop - something you are repeatedly doing is causing you to crash (likely OOM from large test output, or a runaway process). STOP and think carefully: What were you doing? Do NOT repeat the same action. Consider: 1) Running smaller test subsets, 2) Adding output limits, 3) Taking a different approach entirely. Explain your analysis before proceeding."; \
+    sleep 10; \
+  else \
+    echo "Restarting after crash... (Session: ${SESSION_ID})"; \
+    MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."; \
+    sleep 3; \
+  fi && \
+  claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" && break; \
 done
 ```
 
@@ -239,7 +257,8 @@ done
 | `git fetch && git checkout main && git pull` | Ensure clean, up-to-date starting point |
 | `--dangerously-skip-permissions` | Allow file/command operations without prompts |
 | `--session-id` | Enable session resumption after crash |
-| `\|\| while ... --resume` | Auto-restart loop if Claude crashes, resuming same session |
+| `CRASH_TIMES`, `CRASH_WINDOW`, `CRASH_THRESHOLD` | Track crash frequency for loop detection |
+| Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
 
 ### How It Survives
 

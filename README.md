@@ -209,6 +209,80 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 
 ---
 
+## Fully Autonomous Mode
+
+For long-running autonomous operation that survives crashes and continues until all issues are complete.
+
+### Quick Start Command
+
+```bash
+# Generate session ID, sync repo, and start autonomous operation with crash recovery
+SESSION_ID=$(uuidgen || cat /proc/sys/kernel/random/uuid) && \
+echo "$(date -Iseconds) ${SESSION_ID}" >> /tmp/claude-sessions.txt && \
+git fetch && git checkout main && git pull && clear && \
+echo "Session ID: ${SESSION_ID}" && \
+claude --dangerously-skip-permissions --session-id "${SESSION_ID}" \
+  "Use your issue driven development skill to work wholly autonomously until all issues and epics are complete." || \
+while ! claude --dangerously-skip-permissions --resume "${SESSION_ID}" \
+  "You crashed - continue where you left off"; do \
+  echo "Restarting... (Session: ${SESSION_ID})"; \
+  sleep 3; \
+done
+```
+
+### What This Does
+
+| Step | Purpose |
+|------|---------|
+| `SESSION_ID=$(uuidgen \|\| ...)` | Generate unique session ID (works on macOS and Linux) |
+| `echo ... >> /tmp/claude-sessions.txt` | Log session for debugging/audit |
+| `git fetch && git checkout main && git pull` | Ensure clean, up-to-date starting point |
+| `--dangerously-skip-permissions` | Allow file/command operations without prompts |
+| `--session-id` | Enable session resumption after crash |
+| `\|\| while ... --resume` | Auto-restart loop if Claude crashes, resuming same session |
+
+### How It Survives
+
+1. **Crash Recovery**: The `while` loop auto-restarts Claude with `--resume` using the same session ID
+2. **Context Compaction**: `ActiveOrchestration` marker in MCP Memory triggers automatic resume
+3. **State Persistence**: All work state lives in GitHub (project board, issues, PRs) - nothing is lost
+
+### What It Will Do
+
+The autonomous orchestrator will:
+
+1. **Bootstrap**: Resolve any existing open PRs before starting new work
+2. **Detect Scope**: Find all open issues, epics, and milestones
+3. **Spawn Workers**: Run up to 5 parallel workers in isolated git worktrees
+4. **Monitor CI**: Watch PR checks, auto-merge when passing (with review artifacts)
+5. **Handle Failures**: Research and retry failed tasks up to 3 times before blocking
+6. **Sleep/Wake**: Enter sleep mode when waiting on CI, wake on next session
+7. **Complete**: Exit when no issues, PRs, or in-progress work remains
+
+### Monitoring Progress
+
+```bash
+# View session log
+tail -f /tmp/claude-sessions.txt
+
+# Check GitHub project status
+gh project item-list $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --format json | \
+  jq '.items[] | {number: .content.number, title: .content.title, status: .status.name}'
+
+# Check orchestration tracking issue
+gh issue list --label "orchestration-tracking" --json number,title,state
+```
+
+### Stopping Autonomous Mode
+
+To gracefully stop:
+
+1. Create a `do-not-merge` label on any PR to pause merging
+2. Close the orchestration tracking issue
+3. Or simply `Ctrl+C` - state is preserved in GitHub, resume anytime
+
+---
+
 ## Environment Requirements
 
 ### Required CLI Tools

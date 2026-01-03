@@ -229,9 +229,26 @@ This installs:
 After installation, run from any git repository:
 
 ```bash
-claude-autonomous              # Work on all issues
-claude-autonomous --epic 42    # Focus on Epic #42
+claude-autonomous                    # Work on all issues
+claude-autonomous --epic 42          # Focus on Epic #42
+claude-autonomous --new              # Interactive mode (wait for instructions)
+claude-autonomous --continue         # Resume most recent session
+claude-autonomous --resume           # Pick a session to resume
+claude-autonomous --resume abc123    # Resume specific session
+claude-autonomous --list             # Show recent sessions
 ```
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-e, --epic <N>` | Focus on specific epic number (validates issue exists and is open) |
+| `-n, --new` | Interactive mode: bootstrap environment, then wait for instructions |
+| `-c, --continue` | Automatically resume the most recent session |
+| `--resume [ID]` | Resume a specific session, or pick from list if no ID given |
+| `-l, --list` | Show recent sessions with resume instructions |
+| `-r, --repo <path>` | Repository path (default: current directory) |
+| `-h, --help` | Show help message |
 
 ### Manual Quick Start
 
@@ -308,10 +325,11 @@ done
 | `WORKTREE_DIR` | Isolated workspace in `/tmp/claude-worktrees/` |
 | `git worktree add` | Create isolated copy from `origin/main` for parallel work |
 | `trap cleanup EXIT` | Auto-remove worktree on exit (normal or crash) |
-| `WORK_EPIC` env var | Optional: focus on specific epic (e.g., `WORK_EPIC=42`) |
+| `--epic` validation | Verifies issue exists and is OPEN before starting |
 | `--dangerously-skip-permissions` | Allow file/command operations without prompts |
 | `--session-id` | Enable session resumption after crash |
 | Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
+| Max crash limit | Gives up after 10 crashes (configurable via `MAX_CRASHES`) |
 
 ### Running Multiple Agents in Parallel
 
@@ -329,6 +347,26 @@ WORK_EPIC=15 ./run-autonomous.sh
 ```
 
 Each agent gets its own isolated worktree, creates feature branches, and opens PRs - no conflicts.
+
+### Session Management
+
+Sessions are logged to `/tmp/claude-sessions.txt` with timestamp, ID, repo, and scope:
+
+```bash
+# View all sessions
+claude-autonomous --list
+
+# Resume most recent session automatically
+claude-autonomous --continue
+
+# Pick from a list interactively
+claude-autonomous --resume
+
+# Resume specific session by ID
+claude-autonomous --resume abc123-def456
+```
+
+When resuming, the conversation context is restored but no new worktree is created - you resume in your current directory.
 
 ### How It Survives
 
@@ -670,6 +708,9 @@ When verifying acceptance criteria, post structured comments:
 | Worktree creation fails | Run `git worktree prune` to clean stale entries |
 | Default branch detection fails | Ensure `origin` remote is configured correctly |
 | Git version too old | Upgrade git to 2.5+ for worktree support |
+| Epic not found | Verify issue number exists: `gh issue view <N>` |
+| Epic is closed | Reopen the issue or choose a different epic |
+| No origin remote | Add remote: `git remote add origin <url>` |
 
 ### Recovery Procedures
 

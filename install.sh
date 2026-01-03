@@ -477,6 +477,22 @@ PLUGIN_JSON
   log_success "Plugin configured (verify with: claude /plugin list)"
 }
 
+# Check GitHub CLI authentication status
+check_gh_auth() {
+  if ! has_cmd gh; then
+    return 1  # gh not installed yet
+  fi
+
+  if gh auth status &>/dev/null; then
+    GH_AUTHENTICATED=true
+    GH_USER=$(gh api user --jq '.login' 2>/dev/null || echo "authenticated")
+    log_success "GitHub CLI authenticated as: ${GH_USER}"
+  else
+    GH_AUTHENTICATED=false
+    log_warn "GitHub CLI not authenticated"
+  fi
+}
+
 # Main installation
 main() {
   echo ""
@@ -484,6 +500,9 @@ main() {
   echo -e "${CYAN}║${NC}     ${BOLD}Claude Autonomous - Issue-Driven Development Installer${NC}     ${CYAN}║${NC}"
   echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
   echo ""
+
+  # Initialize auth status
+  GH_AUTHENTICATED=false
 
   detect_os
   log_info "Detected OS: ${OS} (package manager: ${PKG_MGR})"
@@ -510,6 +529,7 @@ main() {
     esac
 
     install_gh
+    check_gh_auth  # Check auth status after gh is installed
     install_uv
     install_node
     if [[ "$SKIP_PLAYWRIGHT" != "true" ]]; then
@@ -522,6 +542,8 @@ main() {
     echo ""
   else
     log_info "Skipping dependency installation (SKIP_DEPS=true)"
+    # Still check gh auth status if gh exists
+    check_gh_auth
   fi
 
   # Install the script
@@ -547,20 +569,33 @@ main() {
   echo ""
   echo -e "${BOLD}Next steps:${NC}"
   echo ""
-  echo "  1. Authenticate GitHub CLI (if not already done):"
-  echo -e "     ${CYAN}gh auth login${NC}"
-  echo ""
-  echo "  2. Set required environment variables:"
+
+  local step=1
+
+  # Only show gh auth step if not authenticated
+  if [[ "$GH_AUTHENTICATED" != "true" ]]; then
+    echo "  ${step}. Authenticate GitHub CLI:"
+    echo -e "     ${CYAN}gh auth login${NC}"
+    echo ""
+    ((step++))
+  fi
+
+  echo "  ${step}. Set required environment variables:"
   echo -e "     ${CYAN}export GITHUB_PROJECT=\"https://github.com/users/YOU/projects/N\"${NC}"
   echo -e "     ${CYAN}export GITHUB_PROJECT_NUM=N${NC}"
   echo -e "     ${CYAN}export GH_PROJECT_OWNER=\"@me\"${NC}"
   echo ""
-  echo "  3. Run autonomous mode from any git repository:"
+  ((step++))
+
+  echo "  ${step}. Run autonomous mode from any git repository:"
   echo -e "     ${CYAN}claude-autonomous${NC}"
   echo ""
-  echo "  4. Or focus on a specific epic:"
+  ((step++))
+
+  echo "  ${step}. Or focus on a specific epic:"
   echo -e "     ${CYAN}claude-autonomous --epic 42${NC}"
   echo ""
+
   echo -e "Verify plugin: ${CYAN}claude /plugin list${NC}"
   echo -e "Documentation: ${BLUE}${REPO_URL}${NC}"
   echo ""

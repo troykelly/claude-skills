@@ -165,7 +165,7 @@ if [[ "$CONTINUE_MODE" == "true" ]]; then
   # Parse session info: timestamp session_id repo_name worktree_path details
   SESSION_ID=$(echo "$LATEST" | awk '{print $2}')
   SESSION_REPO=$(echo "$LATEST" | awk '{print $3}')
-  # Note: worktree path is field 4, details start at field 5
+  SESSION_WORKTREE=$(echo "$LATEST" | awk '{print $4}')
   SESSION_DETAILS=$(echo "$LATEST" | cut -d' ' -f5-)
 
   echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
@@ -174,24 +174,68 @@ if [[ "$CONTINUE_MODE" == "true" ]]; then
   echo ""
   echo -e "${BLUE}Session ID:${NC}   ${SESSION_ID}"
   echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
+  echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
   echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
   echo ""
 
-  # Sessions are directory-scoped. Try to find the repo.
-  # First check if we're already in a git repo
-  if git rev-parse --show-toplevel &>/dev/null; then
-    CURRENT_REPO=$(basename "$(git rev-parse --show-toplevel)")
-    if [[ "$CURRENT_REPO" == "$SESSION_REPO" ]]; then
-      echo -e "${GREEN}Already in correct repository. Resuming...${NC}"
-      echo ""
-      exec claude --dangerously-skip-permissions --resume "${SESSION_ID}"
+  # Check if worktree exists, recreate if not
+  if [[ ! -d "$SESSION_WORKTREE" ]]; then
+    echo -e "${YELLOW}Worktree no longer exists. Recreating...${NC}"
+
+    # We need to be in a git repo to create worktree
+    if ! git rev-parse --show-toplevel &>/dev/null; then
+      echo -e "${RED}Error: Not in a git repository${NC}"
+      echo "Run this command from within the ${SESSION_REPO} repository"
+      exit 1
     fi
+
+    REPO_ROOT=$(git rev-parse --show-toplevel)
+    CURRENT_REPO=$(basename "$REPO_ROOT")
+
+    if [[ "$CURRENT_REPO" != "$SESSION_REPO" ]]; then
+      echo -e "${YELLOW}Warning:${NC} Current repo (${CURRENT_REPO}) differs from session repo (${SESSION_REPO})"
+    fi
+
+    # Detect default branch
+    DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "main")
+    if [[ -z "$DEFAULT_BRANCH" ]]; then
+      if git rev-parse --verify origin/main &>/dev/null; then
+        DEFAULT_BRANCH="main"
+      elif git rev-parse --verify origin/master &>/dev/null; then
+        DEFAULT_BRANCH="master"
+      else
+        echo -e "${RED}Error: Could not detect default branch${NC}"
+        exit 1
+      fi
+    fi
+
+    # Prune stale worktrees and fetch
+    git worktree prune 2>/dev/null || true
+    git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || true
+
+    # Create parent directory if needed
+    mkdir -p "$(dirname "$SESSION_WORKTREE")"
+
+    # Create worktree at the exact same path
+    if ! git worktree add "${SESSION_WORKTREE}" "origin/${DEFAULT_BRANCH}" 2>&1; then
+      echo -e "${RED}Error: Failed to recreate worktree${NC}"
+      echo "Try: git worktree prune && git worktree list"
+      exit 1
+    fi
+    echo -e "${GREEN}Worktree recreated successfully${NC}"
+    echo ""
+  else
+    echo -e "${GREEN}Worktree exists${NC}"
+    echo ""
   fi
 
-  # Not in correct repo - try to find it
-  echo -e "${YELLOW}Note:${NC} Sessions are directory-scoped. For best results, run from the ${SESSION_REPO} repository."
-  echo ""
-  echo -e "${GREEN}Attempting resume with session ID...${NC}"
+  # Change to worktree directory and resume
+  cd "${SESSION_WORKTREE}" || {
+    echo -e "${RED}Error: Cannot access worktree directory${NC}"
+    exit 1
+  }
+
+  echo -e "${GREEN}Resuming session from worktree...${NC}"
   echo ""
   exec claude --dangerously-skip-permissions --resume "${SESSION_ID}"
 fi
@@ -232,25 +276,88 @@ if [[ -n "$RESUME_SESSION" ]]; then
     # Use Claude's native --resume for interactive picker
     exec claude --dangerously-skip-permissions --resume
   else
-    # Specific session ID provided
+    # Specific session ID provided - look up worktree path and recreate if needed
     SESSION_INFO=$(get_session_info "$RESUME_SESSION")
     if [[ -n "$SESSION_INFO" ]]; then
       # Format: timestamp session_id repo_name worktree_path details
       SESSION_REPO=$(echo "$SESSION_INFO" | awk '{print $3}')
+      SESSION_WORKTREE=$(echo "$SESSION_INFO" | awk '{print $4}')
       SESSION_DETAILS=$(echo "$SESSION_INFO" | cut -d' ' -f5-)
+
       echo -e "${BLUE}Session ID:${NC}   ${RESUME_SESSION}"
       echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
+      echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
       echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
       echo ""
+
+      # Check if worktree exists, recreate if not
+      if [[ ! -d "$SESSION_WORKTREE" ]]; then
+        echo -e "${YELLOW}Worktree no longer exists. Recreating...${NC}"
+
+        # We need to be in a git repo to create worktree
+        if ! git rev-parse --show-toplevel &>/dev/null; then
+          echo -e "${RED}Error: Not in a git repository${NC}"
+          echo "Run this command from within the ${SESSION_REPO} repository"
+          exit 1
+        fi
+
+        REPO_ROOT=$(git rev-parse --show-toplevel)
+        CURRENT_REPO=$(basename "$REPO_ROOT")
+
+        if [[ "$CURRENT_REPO" != "$SESSION_REPO" ]]; then
+          echo -e "${YELLOW}Warning:${NC} Current repo (${CURRENT_REPO}) differs from session repo (${SESSION_REPO})"
+        fi
+
+        # Detect default branch
+        DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "main")
+        if [[ -z "$DEFAULT_BRANCH" ]]; then
+          if git rev-parse --verify origin/main &>/dev/null; then
+            DEFAULT_BRANCH="main"
+          elif git rev-parse --verify origin/master &>/dev/null; then
+            DEFAULT_BRANCH="master"
+          else
+            echo -e "${RED}Error: Could not detect default branch${NC}"
+            exit 1
+          fi
+        fi
+
+        # Prune stale worktrees and fetch
+        git worktree prune 2>/dev/null || true
+        git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || true
+
+        # Create parent directory if needed
+        mkdir -p "$(dirname "$SESSION_WORKTREE")"
+
+        # Create worktree at the exact same path
+        if ! git worktree add "${SESSION_WORKTREE}" "origin/${DEFAULT_BRANCH}" 2>&1; then
+          echo -e "${RED}Error: Failed to recreate worktree${NC}"
+          echo "Try: git worktree prune && git worktree list"
+          exit 1
+        fi
+        echo -e "${GREEN}Worktree recreated successfully${NC}"
+        echo ""
+      else
+        echo -e "${GREEN}Worktree exists${NC}"
+        echo ""
+      fi
+
+      # Change to worktree directory and resume
+      cd "${SESSION_WORKTREE}" || {
+        echo -e "${RED}Error: Cannot access worktree directory${NC}"
+        exit 1
+      }
+
+      echo -e "${GREEN}Resuming session from worktree...${NC}"
+      echo ""
+      exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
     else
       echo -e "${BLUE}Session ID:${NC}   ${RESUME_SESSION}"
       echo -e "${YELLOW}Note:${NC} Session not found in our log (may be a Claude-native session)"
       echo ""
+      echo -e "${GREEN}Attempting resume...${NC}"
+      echo ""
+      exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
     fi
-
-    echo -e "${GREEN}Resuming session...${NC}"
-    echo ""
-    exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
   fi
 fi
 
@@ -426,7 +533,8 @@ fi
 echo -e "${GREEN}Worktree created successfully${NC}"
 echo ""
 
-# Cleanup function (with guard against double-execution from nested traps)
+# Cleanup function - ONLY cleans up on successful exit (exit code 0)
+# Non-zero exits preserve the worktree to avoid losing uncommitted work
 CLEANUP_DONE=false
 cleanup() {
   if [[ "$CLEANUP_DONE" == "true" ]]; then
@@ -435,11 +543,21 @@ cleanup() {
   CLEANUP_DONE=true
   local exit_code=$?
   echo ""
-  echo -e "${YELLOW}Cleaning up worktree ${WORKTREE_DIR}...${NC}"
-  cd "${REPO_ROOT}" 2>/dev/null || true
-  git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null || true
-  git worktree prune 2>/dev/null || true
-  echo -e "${GREEN}Session ${SESSION_ID} ended at $(date -Iseconds)${NC}"
+
+  if [[ $exit_code -eq 0 ]]; then
+    echo -e "${YELLOW}Session completed successfully. Cleaning up worktree...${NC}"
+    cd "${REPO_ROOT}" 2>/dev/null || true
+    git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null || true
+    git worktree prune 2>/dev/null || true
+    echo -e "${GREEN}Session ${SESSION_ID} ended at $(date -Iseconds)${NC}"
+  else
+    echo -e "${YELLOW}Session exited with code ${exit_code}. Preserving worktree for recovery.${NC}"
+    echo -e "${BLUE}Worktree preserved at:${NC} ${WORKTREE_DIR}"
+    echo -e "${BLUE}Resume with:${NC} claude-autonomous --resume ${SESSION_ID}"
+    echo ""
+    echo -e "${YELLOW}To manually cleanup later:${NC}"
+    echo -e "  cd ${REPO_ROOT} && git worktree remove ${WORKTREE_DIR}"
+  fi
   exit $exit_code
 }
 

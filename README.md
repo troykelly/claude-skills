@@ -417,10 +417,11 @@ done
 | `SESSION_ID=$(uuidgen \|\| ...)` | Generate unique session ID (works on macOS and Linux) |
 | `WORKTREE_DIR` | Isolated workspace in `/tmp/claude-worktrees/` |
 | `git worktree add` | Create isolated copy from `origin/main` for parallel work |
-| `trap cleanup EXIT` | Auto-remove worktree on exit (normal or crash) |
+| Worktree preservation | Only cleanup on successful exit (code 0) - crashes preserve worktree |
 | `--epic` validation | Verifies issue exists and is OPEN before starting |
 | `--dangerously-skip-permissions` | Allow file/command operations without prompts |
 | `--session-id` | Enable session resumption after crash |
+| Worktree recreation | On resume, recreates worktree at same path if deleted |
 | Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
 | Max crash limit | Gives up after 10 crashes (configurable via `MAX_CRASHES`) |
 
@@ -443,10 +444,11 @@ Each agent gets its own isolated worktree, creates feature branches, and opens P
 
 ### Session Management
 
-Sessions are stored by Claude Code in `~/.claude/projects/<encoded-path>/` and are directory-scoped. For worktree sessions to be resumable:
+Sessions are stored by Claude Code in `~/.claude/projects/<encoded-path>/` and are directory-scoped. The script handles this automatically:
 
-1. **Run resume commands from the original repository** (not a random directory)
-2. **Sessions from worktrees are visible** from the main repo and other worktrees
+1. **Worktrees are preserved on crash** - Non-zero exits keep the worktree intact to avoid losing uncommitted work
+2. **Worktrees are recreated on resume** - If the worktree was deleted, it's recreated at the same path before resuming
+3. **Run resume from the original repository** - The script needs git context to recreate worktrees
 
 ```bash
 # View session history (our worktree log)

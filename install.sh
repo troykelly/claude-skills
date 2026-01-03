@@ -13,6 +13,7 @@
 #   INSTALL_DIR     Where to install (default: /usr/local/bin)
 #   SKIP_DEPS       Skip dependency installation (default: false)
 #   SKIP_PLUGIN     Skip Claude Code plugin installation (default: false)
+#   SKIP_PLAYWRIGHT Skip Playwright browser installation (default: false)
 #
 
 set -euo pipefail
@@ -30,6 +31,7 @@ NC='\033[0m'
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 SKIP_DEPS="${SKIP_DEPS:-false}"
 SKIP_PLUGIN="${SKIP_PLUGIN:-false}"
+SKIP_PLAYWRIGHT="${SKIP_PLAYWRIGHT:-false}"
 REPO_URL="https://github.com/troykelly/claude-skills"
 RAW_URL="https://raw.githubusercontent.com/troykelly/claude-skills/main"
 
@@ -240,6 +242,52 @@ install_node() {
   fi
 }
 
+# Install Playwright and browser dependencies (for MCP Playwright server)
+install_playwright() {
+  # Check if playwright is already installed globally
+  if npx playwright --version &>/dev/null 2>&1; then
+    log_success "Playwright already installed ($(npx playwright --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+
+  # Ensure Node.js is installed first
+  if ! has_cmd node; then
+    log_warn "Node.js required for Playwright - installing..."
+    install_node
+  fi
+
+  log_info "Installing Playwright with Chromium browser..."
+
+  # Install playwright package
+  npm install -g playwright 2>/dev/null || npm install -g @anthropic-ai/mcp-server-playwright 2>/dev/null || true
+
+  # Install Chromium browser and system dependencies
+  # --with-deps installs both the browser and required system libraries
+  log_info "Installing Chromium browser and system dependencies..."
+
+  case "$PKG_MGR" in
+    apt|yum|pacman|apk)
+      # Linux needs sudo for system dependency installation
+      maybe_sudo npx playwright install --with-deps chromium 2>/dev/null || \
+        npx playwright install chromium 2>/dev/null || true
+      ;;
+    brew)
+      # macOS doesn't need sudo for deps
+      npx playwright install --with-deps chromium 2>/dev/null || \
+        npx playwright install chromium 2>/dev/null || true
+      ;;
+    *)
+      npx playwright install chromium 2>/dev/null || true
+      ;;
+  esac
+
+  if npx playwright --version &>/dev/null 2>&1; then
+    log_success "Playwright installed with Chromium"
+  else
+    log_warn "Playwright may need manual browser setup: npx playwright install --with-deps chromium"
+  fi
+}
+
 # Install Claude Code CLI via official installer
 install_claude_code() {
   if has_cmd claude; then
@@ -346,6 +394,11 @@ main() {
     install_gh
     install_uv
     install_node
+    if [[ "$SKIP_PLAYWRIGHT" != "true" ]]; then
+      install_playwright
+    else
+      log_info "Skipping Playwright installation (SKIP_PLAYWRIGHT=true)"
+    fi
     install_claude_code
 
     echo ""

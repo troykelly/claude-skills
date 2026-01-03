@@ -1,91 +1,721 @@
-# Issue-Driven Development Skills
+# Issue-Driven Development
 
-An opinionated skill collection for autonomous, GitHub-native software development with Claude Code.
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/troykelly/claude-skills)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Skills](https://img.shields.io/badge/skills-51-purple.svg)](#skills-reference)
+[![Agents](https://img.shields.io/badge/agents-9-orange.svg)](#agents)
 
-## Installation
+A Claude Code plugin for autonomous, GitHub-native software development. Work through issues, create PRs, and ship code - all without manual intervention.
 
-### Option 1: Add Marketplace (Recommended)
+**New to Claude Code?** Install the plugin, run `claude-autonomous`, and watch it work through your GitHub issues.
 
-In Claude Code, run:
+**Experienced developer?** Full TDD, strict typing, IPv6-first networking, parallel workers, and crash recovery included.
+
+---
+
+## Quick Start
+
+### One-Line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/troykelly/claude-skills/main/install.sh | bash
+```
+
+This installs everything: dependencies, Claude Code CLI, the plugin, and CLI tools.
+
+### First Use
+
+```bash
+claude-autonomous
+```
+
+That's it. Claude will find your open GitHub issues and start working through them autonomously.
+
+### Plugin-Only Install (Existing Claude Code Users)
 
 ```
 /plugin marketplace add troykelly/claude-skills
-```
-
-Then install the plugin:
-
-```
 /plugin install issue-driven-development@troykelly-skills
 ```
 
-Or use the interactive browser:
+Restart Claude Code after installation.
 
-```
-/plugin
-```
+---
 
-Select "Browse Plugins" to view and install.
+## What's Included
 
-### Option 2: Manual Settings Configuration
+### CLI Tools
 
-Add to `~/.claude/settings.json`:
+| Tool | Purpose |
+|------|---------|
+| `claude-autonomous` | Autonomous development with crash recovery, parallel workers, and session management |
+| `claude-account` | Multi-account switching without re-authentication |
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "troykelly-skills": {
-      "source": {
-        "source": "github",
-        "repo": "troykelly/claude-skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "issue-driven-development@troykelly-skills": true
-  }
-}
-```
+### 51 Skills
 
-### Option 3: Local Development
+Skills guide Claude through disciplined workflows. They're automatically invoked based on what you're doing.
 
-Clone and register locally:
+| Category | Count | Examples |
+|----------|-------|----------|
+| [Workflow & Orchestration](#workflow--orchestration) | 8 | session-start, autonomous-orchestration, worker-dispatch |
+| [Issue Management](#issue--project-management) | 5 | issue-decomposition, issue-lifecycle, acceptance-criteria-verification |
+| [Work Planning](#work-planning--architecture) | 4 | initiative-architecture, epic-management, milestone-management |
+| [Development Standards](#development-standards) | 7 | strict-typing, tdd-full-coverage, ipv6-first |
+| [Code Review](#code-review) | 3 | comprehensive-review, apply-all-findings |
+| [PR & CI](#pr--ci) | 3 | pr-creation, ci-monitoring, verification-before-merge |
+| [Research & Memory](#research--memory) | 3 | research-after-failure, memory-integration |
+| [Documentation](#documentation-enforcement) | 3 | api-documentation, features-documentation |
+| [Database](#database) | 4 | postgres-rls, postgis, timescaledb |
+| [Other](#other-skills) | 11 | branch-discipline, environment-bootstrap, pexels-media |
+
+[Full skills reference below](#skills-reference)
+
+### 9 Agents
+
+Specialized agents for specific tasks:
+
+| Agent | Purpose |
+|-------|---------|
+| Code Reviewer | Comprehensive code quality review |
+| Security Reviewer | Security-focused code analysis |
+| Silent Failure Hunter | Detect swallowed errors and silent failures |
+| PR Test Analyzer | Analyze test coverage in pull requests |
+| Type Design Analyzer | Evaluate type system design |
+| Code Simplifier | Identify over-engineering and simplification opportunities |
+| Comment Analyzer | Review comment quality and necessity |
+| Code Architect | High-level architecture review |
+| Code Explorer | Codebase navigation and understanding |
+
+---
+
+## Multi-Account Management
+
+The `claude-account` tool lets you switch between Claude accounts without re-authenticating each time.
+
+### Commands
 
 ```bash
-git clone https://github.com/troykelly/claude-skills.git ~/.claude-plugins/claude-skills
+claude-account capture           # Save current logged-in account
+claude-account list              # Show all saved accounts
+claude-account current           # Show active account
+claude-account switch            # Rotate to next account
+claude-account switch <email>    # Switch to specific account
+claude-account remove <email>    # Remove saved account
 ```
 
-Add to `~/.claude/settings.json`:
+### How It Works
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "troykelly-skills": {
-      "source": {
-        "source": "directory",
-        "path": "~/.claude-plugins/claude-skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "issue-driven-development@troykelly-skills": true
-  }
-}
+1. **Capture**: After logging into Claude Code (`/login`), run `claude-account capture` to save credentials
+2. **Store**: Credentials are saved to `.env` in your project (gitignored) and platform credential storage
+3. **Switch**: Use `claude-account switch` to swap between saved accounts instantly
+
+### Platform Support
+
+| Platform | Credential Storage |
+|----------|-------------------|
+| macOS | Keychain (`Claude Code-credentials`) |
+| Linux/Devcontainer | `~/.claude/.credentials.json` |
+
+### Devcontainer Workflow
+
+For persistent accounts across container rebuilds:
+
+1. Capture accounts: `claude-account capture`
+2. Sync `.env` to 1Password or another secrets manager
+3. On rebuild, restore `.env` and run `claude-account switch <email>`
+
+### .env Format
+
+```bash
+# Managed by claude-account - accounts derived from CLAUDE_ACCOUNT_*_EMAILADDRESS variables
+CLAUDE_ACCOUNT_USER_EXAMPLE_COM_EMAILADDRESS="user@example.com"
+CLAUDE_ACCOUNT_USER_EXAMPLE_COM_ACCESSTOKEN="sk-ant-oat01-..."
+CLAUDE_ACCOUNT_USER_EXAMPLE_COM_REFRESHTOKEN="sk-ant-ort01-..."
+# ... additional fields per account
 ```
 
-### After Installation
+---
 
-1. Restart Claude Code to load the plugin
-2. The SessionStart hook will validate your environment automatically
-3. Verify with `/plugin list` - should show `issue-driven-development`
-4. Set required environment variables (see below)
-5. Configure your GitHub Project (see Quick Start)
+## Autonomous Mode
 
-### Configure Your CLAUDE.md
+### Basic Usage
 
-For best results with this plugin, configure your project's `CLAUDE.md` with instructions that reinforce the issue-driven workflow. Copy the following prompt and paste it into a Claude Code session in your project directory:
+```bash
+claude-autonomous                    # Work on all open issues
+claude-autonomous --epic 42          # Focus on specific epic
+claude-autonomous --new              # Start fresh, wait for instructions
+claude-autonomous --continue         # Resume most recent session
+claude-autonomous --resume           # Open session picker
+claude-autonomous --list             # Show session history
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-e, --epic <N>` | Focus on specific epic (validates issue exists and is open) |
+| `-n, --new` | Interactive mode: bootstrap environment, then wait |
+| `-c, --continue` | Resume most recent session |
+| `--resume [ID]` | Open session picker or resume specific session |
+| `-l, --list` | Show worktree session history |
+| `-r, --repo <path>` | Repository path (default: current directory) |
+
+### What It Does
+
+1. **Creates isolated worktree** from `origin/main` for safe parallel work
+2. **Finds open issues** in your GitHub project
+3. **Works through them** following TDD, code review, and PR creation
+4. **Recovers from crashes** automatically with session resumption
+5. **Detects crash loops** and adjusts approach after repeated failures
+
+### Parallel Workers
+
+Run multiple agents on different epics simultaneously:
+
+```bash
+# Terminal 1
+claude-autonomous --epic 10
+
+# Terminal 2
+claude-autonomous --epic 15
+
+# Terminal 3
+claude-autonomous
+```
+
+Each agent works in its own isolated worktree.
+
+### Session Management
+
+Sessions are stored by Claude Code in `~/.claude/projects/<encoded-path>/` and are directory-scoped. The script handles this automatically:
+
+1. **Worktrees are preserved on crash** - Non-zero exits keep the worktree intact to avoid losing uncommitted work
+2. **Worktrees are recreated on resume** - If the worktree was deleted, it's recreated at the same path before resuming
+3. **Run resume from the original repository** - The script needs git context to recreate worktrees
+
+```bash
+# View session history (our worktree log)
+claude-autonomous --list
+
+# Resume most recent session (uses our logged session ID)
+claude-autonomous --continue
+
+# Open Claude's interactive session picker
+claude-autonomous --resume
+
+# Resume specific session by ID
+claude-autonomous --resume <uuid-from-list>
+```
+
+Our log at `/tmp/claude-sessions.txt` tracks worktree sessions with format:
+`timestamp session_id repo_name worktree_path details`
+
+### How It Survives
+
+1. **Crash Recovery**: The `while` loop auto-restarts Claude with `--resume` using the same session ID
+2. **Context Compaction**: `ActiveOrchestration` marker in MCP Memory triggers automatic resume
+3. **State Persistence**: All work state lives in GitHub (project board, issues, PRs) - nothing is lost
+
+### What The Orchestrator Does
+
+1. **Bootstrap**: Resolve any existing open PRs before starting new work
+2. **Detect Scope**: Find all open issues, epics, and milestones
+3. **Spawn Workers**: Run up to 5 parallel workers in isolated git worktrees
+4. **Monitor CI**: Watch PR checks, auto-merge when passing (with review artifacts)
+5. **Handle Failures**: Research and retry failed tasks up to 3 times before blocking
+6. **Sleep/Wake**: Enter sleep mode when waiting on CI, wake on next session
+7. **Complete**: Exit when no issues, PRs, or in-progress work remains
+
+### Crash Recovery
+
+| Scenario | Behavior |
+|----------|----------|
+| Single crash | Auto-restart with session resume |
+| 3+ crashes in 60s | Crash loop detection, forced slowdown |
+| 10+ total crashes | Gives up (configurable via `MAX_CRASHES`) |
+
+### Monitoring Progress
+
+```bash
+# View session log
+tail -f /tmp/claude-sessions.txt
+
+# Check GitHub project status
+gh project item-list $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --format json | \
+  jq '.items[] | {number: .content.number, title: .content.title, status: .status.name}'
+
+# Check orchestration tracking issue
+gh issue list --label "orchestration-tracking" --json number,title,state
+```
+
+### Stopping Autonomous Mode
+
+To gracefully stop:
+
+1. Create a `do-not-merge` label on any PR to pause merging
+2. Close the orchestration tracking issue
+3. Or simply `Ctrl+C` - state is preserved in GitHub, resume anytime
 
 <details>
-<summary><strong>Click to expand: CLAUDE.md Configuration Prompt</strong></summary>
+<summary><strong>Manual Autonomous Script</strong></summary>
+
+For customization or debugging, here's the full script with crash loop detection:
+
+```bash
+SESSION_ID=$(uuidgen || cat /proc/sys/kernel/random/uuid) && \
+REPO_ROOT=$(git rev-parse --show-toplevel) && \
+REPO_NAME=$(basename "${REPO_ROOT}") && \
+WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}" && \
+echo "$(date -Iseconds) ${SESSION_ID}" >> /tmp/claude-sessions.txt && \
+git fetch origin main && \
+git worktree add "${WORKTREE_DIR}" origin/main && \
+cleanup() { \
+  echo "Cleaning up worktree ${WORKTREE_DIR}..."; \
+  cd "${REPO_ROOT}" && \
+  git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null; \
+  echo "Session ${SESSION_ID} ended at $(date -Iseconds)"; \
+} && \
+trap cleanup EXIT && \
+cd "${WORKTREE_DIR}" && \
+clear && \
+echo "Session ID: ${SESSION_ID}" && \
+echo "Worktree: ${WORKTREE_DIR}" && \
+if [ -n "${WORK_EPIC}" ]; then \
+  echo "Focus Epic: #${WORK_EPIC}"; \
+  EPIC_INSTRUCTION="Focus exclusively on Epic #${WORK_EPIC} and its child issues. Do not work on unrelated issues."; \
+else \
+  EPIC_INSTRUCTION="Work through all open epics and issues in priority order."; \
+fi && \
+INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
+
+This worktree was created from origin/main to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
+
+IMPORTANT WORKFLOW NOTES:
+- You have your own isolated copy of the codebase - other agents may be working in parallel
+- Create feature branches for your work and push them to origin
+- Open PRs when work is complete - do not merge directly to main
+- If you need latest changes from main, you can pull origin/main into your worktree
+
+TASK: Use your issue driven development skill to work wholly autonomously until all assigned work is complete.
+
+${EPIC_INSTRUCTION}" && \
+CRASH_TIMES=() && \
+CRASH_WINDOW=60 && \
+CRASH_THRESHOLD=3 && \
+claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || \
+while true; do \
+  NOW=$(date +%s) && \
+  CRASH_TIMES+=("$NOW") && \
+  RECENT_CRASHES=0 && \
+  for T in "${CRASH_TIMES[@]}"; do \
+    if (( NOW - T < CRASH_WINDOW )); then \
+      ((RECENT_CRASHES++)); \
+    fi; \
+  done && \
+  if (( RECENT_CRASHES >= CRASH_THRESHOLD )); then \
+    echo "Warning: Rapid crash loop detected ($RECENT_CRASHES crashes in ${CRASH_WINDOW}s)"; \
+    MSG="CRITICAL: You have crashed $RECENT_CRASHES times in the last ${CRASH_WINDOW} seconds. This indicates a crash loop - something you are repeatedly doing is causing you to crash (likely OOM from large test output, or a runaway process). STOP and think carefully: What were you doing? Do NOT repeat the same action. Consider: 1) Running smaller test subsets, 2) Adding output limits, 3) Taking a different approach entirely. Explain your analysis before proceeding."; \
+    sleep 10; \
+  else \
+    echo "Restarting after crash... (Session: ${SESSION_ID})"; \
+    MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."; \
+    sleep 3; \
+  fi && \
+  claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" && break; \
+done
+```
+
+| Step | Purpose |
+|------|---------|
+| `SESSION_ID=$(uuidgen \|\| ...)` | Generate unique session ID (works on macOS and Linux) |
+| `WORKTREE_DIR` | Isolated workspace in `/tmp/claude-worktrees/` |
+| `git worktree add` | Create isolated copy from `origin/main` for parallel work |
+| Worktree preservation | Only cleanup on successful exit (code 0) - crashes preserve worktree |
+| `--epic` validation | Verifies issue exists and is OPEN before starting |
+| `--dangerously-skip-permissions` | Allow file/command operations without prompts |
+| `--session-id` | Enable session resumption after crash |
+| Worktree recreation | On resume, recreates worktree at same path if deleted |
+| Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
+| Max crash limit | Gives up after 10 crashes (configurable via `MAX_CRASHES`) |
+
+</details>
+
+---
+
+## Configuration
+
+### Environment Variables
+
+**Required:**
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `GITHUB_PROJECT` | `https://github.com/users/you/projects/1` | Target project URL |
+| `GITHUB_OWNER` | `you` | Repository owner |
+| `GITHUB_REPO` | `my-app` | Repository name |
+| `GITHUB_PROJECT_NUM` | `1` | Project number from URL |
+
+**Optional:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GITHUB_TOKEN` | Auto from `gh auth token` | GitHub API token |
+| `MAX_CRASHES` | `10` | Crash limit before giving up |
+| `PEXELS_API_KEY` | - | For `pexels-media` skill |
+
+### GitHub Project Fields
+
+Your project needs these custom fields:
+
+| Field | Type | Values | Purpose |
+|-------|------|--------|---------|
+| `Status` | Single select | `Backlog`, `Ready`, `In Progress`, `In Review`, `Done`, `Blocked` | Work state |
+| `Verification` | Single select | `Not Verified`, `Failing`, `Partial`, `Passing` | Test status |
+| `Criteria Met` | Number | 0-N | Checked acceptance criteria count |
+| `Criteria Total` | Number | N | Total acceptance criteria |
+| `Priority` | Single select | `Critical`, `High`, `Medium`, `Low` | Ordering |
+| `Type` | Single select | `Feature`, `Bug`, `Chore`, `Research`, `Spike` | Categorization |
+| `Last Verified` | Date | ISO timestamp | When verification ran |
+| `Verified By` | Text | `agent` / `human` / `ci` | Who verified |
+
+Create them via GitHub UI or CLI:
+
+```bash
+GH_PROJECT_OWNER="@me"  # Use org name for org projects
+
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" \
+  --name "Verification" --data-type "SINGLE_SELECT" \
+  --single-select-options "Not Verified,Failing,Partial,Passing"
+
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" \
+  --name "Priority" --data-type "SINGLE_SELECT" \
+  --single-select-options "Critical,High,Medium,Low"
+
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" \
+  --name "Type" --data-type "SINGLE_SELECT" \
+  --single-select-options "Feature,Bug,Chore,Research,Spike"
+```
+
+<details>
+<summary><strong>All Field Creation Commands</strong></summary>
+
+```bash
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Met" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Total" --data-type "NUMBER"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Last Verified" --data-type "DATE"
+gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Verified By" --data-type "TEXT"
+```
+
+</details>
+
+### Labels
+
+```bash
+gh label create "parent" --color "0E8A16" --description "Issue has sub-issues"
+gh label create "sub-issue" --color "1D76DB" --description "Issue is child of parent"
+gh label create "blocked" --color "D93F0B" --description "Cannot proceed"
+gh label create "needs-research" --color "FBCA04" --description "Research required"
+gh label create "verified" --color "0E8A16" --description "E2E verification passed"
+```
+
+### Required CLI Tools
+
+| Tool | Purpose | Verification |
+|------|---------|--------------|
+| `gh` | GitHub CLI | `gh auth status` - must show logged in |
+| `git` | Version control (2.5+) | `git --version` - worktrees require 2.5+ |
+
+### Optional CLI Tools
+
+| Tool | Purpose | Verification |
+|------|---------|--------------|
+| `pnpm` | Node.js package manager | `pnpm --version` |
+| `op` | 1Password CLI | `op account list` |
+
+### Required MCP Servers
+
+| Server | Purpose | Critical Functions |
+|--------|---------|-------------------|
+| `mcp__git` | Git operations | status, diff, commit, branch, checkout |
+| `mcp__memory` | Knowledge graph | Persistent context across sessions |
+
+### Recommended MCP Servers
+
+| Server | Purpose | Used By |
+|--------|---------|---------|
+| `mcp__playwright` | Browser automation | E2E verification |
+| `mcp__puppeteer` | Browser automation | E2E verification (alternative) |
+
+### Required Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `episodic-memory` | Cross-session conversation recall |
+
+---
+
+## Skills Reference
+
+<details>
+<summary><strong>Workflow & Orchestration</strong> (8 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`session-start`](skills/session-start/SKILL.md) | Get bearings at session start |
+| [`autonomous-operation`](skills/autonomous-operation/SKILL.md) | Override token limits, work until goal achieved |
+| [`issue-driven-development`](skills/issue-driven-development/SKILL.md) | Master 13-step coding process |
+| [`autonomous-orchestration`](skills/autonomous-orchestration/SKILL.md) | Long-running autonomous work with parallel workers |
+| [`worker-dispatch`](skills/worker-dispatch/SKILL.md) | Spawn isolated worker processes in git worktrees |
+| [`worker-protocol`](skills/worker-protocol/SKILL.md) | Behavioral contract for spawned workers |
+| [`worker-handover`](skills/worker-handover/SKILL.md) | Context transfer when workers hit turn limits |
+| [`work-intake`](skills/work-intake/SKILL.md) | Triage requests from trivial to massive |
+
+</details>
+
+<details>
+<summary><strong>Issue & Project Management</strong> (5 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`issue-prerequisite`](skills/issue-prerequisite/SKILL.md) | Ensure GitHub issue exists before work |
+| [`issue-decomposition`](skills/issue-decomposition/SKILL.md) | Break large issues into sub-issues |
+| [`issue-lifecycle`](skills/issue-lifecycle/SKILL.md) | Continuous issue updates |
+| [`project-status-sync`](skills/project-status-sync/SKILL.md) | Update GitHub Project fields |
+| [`acceptance-criteria-verification`](skills/acceptance-criteria-verification/SKILL.md) | Verify and report on criteria |
+
+</details>
+
+<details>
+<summary><strong>Work Planning & Architecture</strong> (4 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`initiative-architecture`](skills/initiative-architecture/SKILL.md) | Multi-epic planning with research spikes |
+| [`epic-management`](skills/epic-management/SKILL.md) | Feature-level issue grouping |
+| [`milestone-management`](skills/milestone-management/SKILL.md) | Time-based issue grouping for releases |
+| [`work-intake`](skills/work-intake/SKILL.md) | Route work to appropriate workflows |
+
+</details>
+
+<details>
+<summary><strong>Development Standards</strong> (7 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`strict-typing`](skills/strict-typing/SKILL.md) | No `any` types - everything fully typed |
+| [`style-guide-adherence`](skills/style-guide-adherence/SKILL.md) | Google style guides |
+| [`inline-documentation`](skills/inline-documentation/SKILL.md) | Complete JSDoc/docstrings |
+| [`inclusive-language`](skills/inclusive-language/SKILL.md) | Respectful terminology |
+| [`ipv6-first`](skills/ipv6-first/SKILL.md) | IPv6 primary, IPv4 legacy only |
+| [`tdd-full-coverage`](skills/tdd-full-coverage/SKILL.md) | TDD with full coverage |
+| [`no-deferred-work`](skills/no-deferred-work/SKILL.md) | No TODOs - do it now or don't commit |
+
+</details>
+
+<details>
+<summary><strong>Code Review</strong> (3 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`comprehensive-review`](skills/comprehensive-review/SKILL.md) | 7-criteria code review |
+| [`review-scope`](skills/review-scope/SKILL.md) | Determine minor vs major review scope |
+| [`apply-all-findings`](skills/apply-all-findings/SKILL.md) | Implement all review recommendations |
+
+</details>
+
+<details>
+<summary><strong>PR & CI</strong> (3 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`pr-creation`](skills/pr-creation/SKILL.md) | Complete PR documentation |
+| [`ci-monitoring`](skills/ci-monitoring/SKILL.md) | Monitor and fix CI issues |
+| [`verification-before-merge`](skills/verification-before-merge/SKILL.md) | All checks before merge |
+
+</details>
+
+<details>
+<summary><strong>Research & Memory</strong> (3 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`research-after-failure`](skills/research-after-failure/SKILL.md) | Research after 2 consecutive failures |
+| [`pre-work-research`](skills/pre-work-research/SKILL.md) | Research before coding |
+| [`memory-integration`](skills/memory-integration/SKILL.md) | Use episodic + knowledge graph memory |
+
+</details>
+
+<details>
+<summary><strong>Branch & Git</strong> (2 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`branch-discipline`](skills/branch-discipline/SKILL.md) | Never work on main |
+| [`clean-commits`](skills/clean-commits/SKILL.md) | Atomic, descriptive commits |
+
+</details>
+
+<details>
+<summary><strong>Documentation Enforcement</strong> (3 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`api-documentation`](skills/api-documentation/SKILL.md) | Enforce Swagger/OpenAPI sync |
+| [`features-documentation`](skills/features-documentation/SKILL.md) | Enforce features.md sync |
+| [`documentation-audit`](skills/documentation-audit/SKILL.md) | Comprehensive documentation sync |
+
+</details>
+
+<details>
+<summary><strong>Database</strong> (4 skills) - PostgreSQL 18, PostGIS 3.6.1, TimescaleDB 2.24.0</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`postgres-rls`](skills/postgres-rls/SKILL.md) | Row Level Security best practices |
+| [`database-architecture`](skills/database-architecture/SKILL.md) | Schema design, migrations, indexing |
+| [`postgis`](skills/postgis/SKILL.md) | Spatial data and geometry types |
+| [`timescaledb`](skills/timescaledb/SKILL.md) | Hypertables, continuous aggregates, compression |
+
+</details>
+
+<details>
+<summary><strong>Recovery & Environment</strong> (3 skills)</summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`error-recovery`](skills/error-recovery/SKILL.md) | Graceful failure handling |
+| [`environment-bootstrap`](skills/environment-bootstrap/SKILL.md) | Dev environment setup |
+| [`conflict-resolution`](skills/conflict-resolution/SKILL.md) | Merge conflict handling |
+
+</details>
+
+<details>
+<summary><strong>Other Skills</strong></summary>
+
+| Skill | Description |
+|-------|-------------|
+| [`pexels-media`](skills/pexels-media/SKILL.md) | Source images/videos from Pexels |
+
+</details>
+
+---
+
+## The 13-Step Workflow
+
+This is the master process that `issue-driven-development` implements:
+
+```
+ 1. ISSUE CHECK      → Ensure GitHub issue exists
+ 2. READ COMMENTS    → Check for context and updates
+ 3. SIZE CHECK       → Break large issues into sub-issues
+ 4. MEMORY SEARCH    → Find previous work on related issues
+ 5. RESEARCH         → Gather needed information
+ 6. BRANCH CHECK     → Create/switch to feature branch
+ 7. TDD DEVELOPMENT  → Write tests first, then code
+ 8. VERIFICATION     → Verify acceptance criteria
+ 9. CODE REVIEW      → Review against 7 criteria
+10. IMPLEMENT FIXES  → Apply all review findings
+11. RUN TESTS        → Full test suite
+12. RAISE PR         → Create with complete documentation
+13. CI MONITORING    → Watch CI, resolve issues
+```
+
+Issue updates happen continuously throughout, not as a separate step.
+
+---
+
+## Verification Report Format
+
+When verifying acceptance criteria, post structured comments to issues:
+
+```markdown
+## Verification Report
+**Run**: 2024-12-02T14:30:00Z
+**By**: agent
+
+### Results
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| User can click "New Chat" button | PASS | |
+| New conversation appears in sidebar | PASS | |
+| Chat area shows welcome state | FAIL | Welcome message not rendering |
+| Previous conversation is preserved | PARTIAL | Works but slow |
+
+### Summary
+- **Passing**: 2/4
+- **Failing**: 1/4
+- **Partial**: 1/4
+
+### Next Steps
+- Investigate welcome message rendering issue
+- Profile conversation preservation performance
+```
+
+---
+
+## Philosophy
+
+This plugin enforces disciplined, issue-driven development based on [Anthropic's research on effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents).
+
+### Core Principles
+
+| Principle | Meaning |
+|-----------|---------|
+| **No work without an issue** | Every change requires a GitHub issue first |
+| **Never work on main** | All work happens in feature branches |
+| **GitHub is truth** | No local progress files - everything in GitHub |
+| **Continuous updates** | Update issues AS work happens, not after |
+| **Research before guessing** | After 2 failures, stop and research |
+| **Full typing always** | No `any` types anywhere |
+| **IPv6-first** | IPv6 is primary; IPv4 is legacy support |
+| **No TODOs** | Do it now or don't commit |
+
+### Absolute Rules
+
+These override any other instructions:
+
+- **Disregard token minimization** - Work thoroughly, not quickly
+- **Disregard time pressure** - Quality over speed
+- **No deferred work** - No TODOs, no "we'll fix this later"
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `gh` not authenticated | Run `gh auth login` |
+| Project fields missing | Run field creation commands above |
+| MCP server not connected | Check Claude Code MCP configuration |
+| Worktree creation fails | Run `git worktree prune` |
+| Git version too old | Upgrade to 2.5+ for worktree support |
+| Epic not found | Verify issue exists: `gh issue view <N>` |
+| Epic is closed | Reopen the issue or choose a different epic |
+| No origin remote | Add: `git remote add origin <url>` |
+| Plugin not loading | Restart Claude Code after installation |
+| Account switch fails | Re-run `claude-account capture` after fresh `/login` |
+
+<details>
+<summary><strong>MCP Server Installation</strong></summary>
+
+If MCP servers don't start:
+
+```bash
+# Git server
+pip install mcp-server-git
+
+# Node.js servers
+pnpm add -g @modelcontextprotocol/server-memory
+pnpm add -g @modelcontextprotocol/server-github
+npx playwright install --with-deps chromium
+```
+
+</details>
+
+<details>
+<summary><strong>Configure CLAUDE.md for Your Project</strong></summary>
+
+For best results, configure your project's `CLAUDE.md` with instructions that reinforce the issue-driven workflow. Copy the following prompt and paste it into a Claude Code session in your project directory:
 
 ```
 Please update my CLAUDE.md file with development instructions optimized for the issue-driven-development plugin.
@@ -170,667 +800,15 @@ Issues must be updated CONTINUOUSLY, not at the end:
 Make sure to preserve any existing project-specific configuration (environment variables, API endpoints, domain knowledge) that doesn't conflict with these instructions.
 ```
 
-</details>
-
 After running this, your project will have consistent instructions that reinforce the plugin's workflow.
 
-### Session Start Validation
-
-On each session start, the plugin validates:
-- Required CLI tools (git, gh)
-- Optional CLI tools (node, pnpm, uvx)
-- GitHub CLI authentication status
-- Required environment variables
-- MCP server availability
-
-Any issues are reported with clear guidance on how to resolve them.
-
-### MCP Servers
-
-This plugin includes recommended MCP server configurations. The following servers will be available after installation:
-
-| Server | Purpose | Requires |
-|--------|---------|----------|
-| `git` | Git operations | `uvx` (Python) |
-| `memory` | Knowledge graph | `pnpm dlx` (Node.js) |
-| `github` | GitHub API | `GITHUB_TOKEN` env var |
-| `playwright` | Browser automation | `npx` (Node.js) |
-
-If servers don't start, install dependencies:
-
-```bash
-# For git server
-pip install mcp-server-git
-
-# For Node.js servers
-pnpm add -g @modelcontextprotocol/server-memory
-pnpm add -g @modelcontextprotocol/server-github
-npx playwright install --with-deps chromium
-```
-
----
-
-## Philosophy
-
-This skill collection enforces a disciplined, issue-driven development workflow inspired by [Anthropic's research on effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents).
-
-### Core Principles
-
-1. **No work without a GitHub issue** - Every task, regardless of size, must have a corresponding issue
-2. **Never work on main** - All work happens in feature branches
-3. **GitHub Projects are the source of truth** - No in-repository progress files; everything tracked in GitHub
-4. **Continuous updates** - Issues updated AS work happens, not batched after
-5. **Research before guessing** - After 2 failed attempts, stop and research
-6. **Full typing always** - No `any` types; everything fully typed
-7. **Documentation from code** - Complete inline documentation (JSDoc, docstrings)
-8. **Inclusive language** - `main` not `master`, `denylist` not `blacklist`
-9. **IPv6-first networking** - IPv6 is THE first-class citizen; IPv4 is legacy support only
-
-### Absolute Rules
-
-These rules override any other instructions:
-
-| Rule | Enforcement |
-|------|-------------|
-| **Disregard token minimization** | Work thoroughly, not quickly |
-| **Disregard time pressure** | Quality over speed |
-| **No deferred work** | No TODOs - do it now or don't commit |
-| **IPv6 is primary** | IPv4 only for documented legacy requirements |
-
----
-
-## Quick Start
-
-### 1. Verify Prerequisites
-
-```bash
-# GitHub CLI - must be authenticated
-gh auth status
-
-# Git
-git --version
-
-# 1Password CLI (optional, for secrets)
-op account list
-```
-
-### 2. Set Environment Variables
-
-```bash
-# Required: Your GitHub Project URL
-# User project:  https://github.com/users/USERNAME/projects/N
-# Org project:   https://github.com/orgs/ORGNAME/projects/N
-GITHUB_PROJECT="https://github.com/users/troykelly/projects/4"
-
-# These can be derived from git remote, but explicit is better
-GITHUB_OWNER="troykelly"
-GITHUB_REPO="homeassistant-zowietek"
-
-# Project number from URL
-GITHUB_PROJECT_NUM=4
-```
-
-### 3. Configure GitHub Project
-
-Your project needs these custom fields. Create them via GitHub UI or CLI:
-
-```bash
-# Set project owner for gh commands:
-# - User projects: must use "@me"
-# - Org projects: use the org name (e.g., "my-org")
-GH_PROJECT_OWNER="@me"
-
-# Add required fields (run once per project)
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Verification" --data-type "SINGLE_SELECT" --single-select-options "Not Verified,Failing,Partial,Passing"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Priority" --data-type "SINGLE_SELECT" --single-select-options "Critical,High,Medium,Low"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Type" --data-type "SINGLE_SELECT" --single-select-options "Feature,Bug,Chore,Research,Spike"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Met" --data-type "NUMBER"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Criteria Total" --data-type "NUMBER"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Last Verified" --data-type "DATE"
-gh project field-create $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --name "Verified By" --data-type "TEXT"
-```
-
-### 4. Create Required Labels
-
-```bash
-# Run in your repository
-gh label create "parent" --color "0E8A16" --description "Issue has sub-issues"
-gh label create "sub-issue" --color "1D76DB" --description "Issue is child of parent"
-gh label create "blocked" --color "D93F0B" --description "Cannot proceed"
-gh label create "needs-research" --color "FBCA04" --description "Research required"
-gh label create "verified" --color "0E8A16" --description "E2E verification passed"
-```
-
----
-
-## Fully Autonomous Mode
-
-For long-running autonomous operation that survives crashes and continues until all issues are complete.
-
-### One-Line Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/troykelly/claude-skills/main/install.sh | bash
-```
-
-This installs:
-- Required dependencies (`git`, `gh`, `jq`)
-- Optional runtimes (`uv`/`uvx`, `node`) for MCP servers
-- Claude Code CLI (via official installer)
-- The `claude-autonomous` command
-- The issue-driven-development plugin
-
-After installation, run from any git repository:
-
-```bash
-claude-autonomous                    # Work on all issues
-claude-autonomous --epic 42          # Focus on Epic #42
-claude-autonomous --new              # Interactive mode (wait for instructions)
-claude-autonomous --continue         # Resume most recent session
-claude-autonomous --resume           # Open Claude's session picker
-claude-autonomous --list             # Show worktree history
-```
-
-### Command Line Options
-
-| Option | Description |
-|--------|-------------|
-| `-e, --epic <N>` | Focus on specific epic number (validates issue exists and is open) |
-| `-n, --new` | Interactive mode: bootstrap environment, then wait for instructions |
-| `-c, --continue` | Resume most recent session (uses Claude's native `--continue`) |
-| `--resume [ID]` | Open Claude's session picker, or resume specific session by ID |
-| `-l, --list` | Show worktree session history |
-| `-r, --repo <path>` | Repository path (default: current directory) |
-| `-h, --help` | Show help message |
-
-### Manual Quick Start
-
-```bash
-# Generate session ID, create isolated worktree from origin/main, and start autonomous operation
-SESSION_ID=$(uuidgen || cat /proc/sys/kernel/random/uuid) && \
-REPO_ROOT=$(git rev-parse --show-toplevel) && \
-REPO_NAME=$(basename "${REPO_ROOT}") && \
-WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}" && \
-echo "$(date -Iseconds) ${SESSION_ID}" >> /tmp/claude-sessions.txt && \
-git fetch origin main && \
-git worktree add "${WORKTREE_DIR}" origin/main && \
-cleanup() { \
-  echo "Cleaning up worktree ${WORKTREE_DIR}..."; \
-  cd "${REPO_ROOT}" && \
-  git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null; \
-  echo "Session ${SESSION_ID} ended at $(date -Iseconds)"; \
-} && \
-trap cleanup EXIT && \
-cd "${WORKTREE_DIR}" && \
-clear && \
-echo "Session ID: ${SESSION_ID}" && \
-echo "Worktree: ${WORKTREE_DIR}" && \
-if [ -n "${WORK_EPIC}" ]; then \
-  echo "Focus Epic: #${WORK_EPIC}"; \
-  EPIC_INSTRUCTION="Focus exclusively on Epic #${WORK_EPIC} and its child issues. Do not work on unrelated issues."; \
-else \
-  EPIC_INSTRUCTION="Work through all open epics and issues in priority order."; \
-fi && \
-INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
-
-This worktree was created from origin/main to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
-
-IMPORTANT WORKFLOW NOTES:
-- You have your own isolated copy of the codebase - other agents may be working in parallel
-- Create feature branches for your work and push them to origin
-- Open PRs when work is complete - do not merge directly to main
-- If you need latest changes from main, you can pull origin/main into your worktree
-
-TASK: Use your issue driven development skill to work wholly autonomously until all assigned work is complete.
-
-${EPIC_INSTRUCTION}" && \
-CRASH_TIMES=() && \
-CRASH_WINDOW=60 && \
-CRASH_THRESHOLD=3 && \
-claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || \
-while true; do \
-  NOW=$(date +%s) && \
-  CRASH_TIMES+=("$NOW") && \
-  RECENT_CRASHES=0 && \
-  for T in "${CRASH_TIMES[@]}"; do \
-    if (( NOW - T < CRASH_WINDOW )); then \
-      ((RECENT_CRASHES++)); \
-    fi; \
-  done && \
-  if (( RECENT_CRASHES >= CRASH_THRESHOLD )); then \
-    echo "⚠️  Rapid crash loop detected ($RECENT_CRASHES crashes in ${CRASH_WINDOW}s)"; \
-    MSG="CRITICAL: You have crashed $RECENT_CRASHES times in the last ${CRASH_WINDOW} seconds. This indicates a crash loop - something you are repeatedly doing is causing you to crash (likely OOM from large test output, or a runaway process). STOP and think carefully: What were you doing? Do NOT repeat the same action. Consider: 1) Running smaller test subsets, 2) Adding output limits, 3) Taking a different approach entirely. Explain your analysis before proceeding."; \
-    sleep 10; \
-  else \
-    echo "Restarting after crash... (Session: ${SESSION_ID})"; \
-    MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."; \
-    sleep 3; \
-  fi && \
-  claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" && break; \
-done
-```
-
-### What This Does
-
-| Step | Purpose |
-|------|---------|
-| `SESSION_ID=$(uuidgen \|\| ...)` | Generate unique session ID (works on macOS and Linux) |
-| `WORKTREE_DIR` | Isolated workspace in `/tmp/claude-worktrees/` |
-| `git worktree add` | Create isolated copy from `origin/main` for parallel work |
-| Worktree preservation | Only cleanup on successful exit (code 0) - crashes preserve worktree |
-| `--epic` validation | Verifies issue exists and is OPEN before starting |
-| `--dangerously-skip-permissions` | Allow file/command operations without prompts |
-| `--session-id` | Enable session resumption after crash |
-| Worktree recreation | On resume, recreates worktree at same path if deleted |
-| Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
-| Max crash limit | Gives up after 10 crashes (configurable via `MAX_CRASHES`) |
-
-### Running Multiple Agents in Parallel
-
-The worktree isolation enables running multiple agents simultaneously:
-
-```bash
-# Terminal 1: Work on Epic #10
-WORK_EPIC=10 ./run-autonomous.sh
-
-# Terminal 2: Work on Epic #15
-WORK_EPIC=15 ./run-autonomous.sh
-
-# Terminal 3: Work on all remaining issues
-./run-autonomous.sh
-```
-
-Each agent gets its own isolated worktree, creates feature branches, and opens PRs - no conflicts.
-
-### Session Management
-
-Sessions are stored by Claude Code in `~/.claude/projects/<encoded-path>/` and are directory-scoped. The script handles this automatically:
-
-1. **Worktrees are preserved on crash** - Non-zero exits keep the worktree intact to avoid losing uncommitted work
-2. **Worktrees are recreated on resume** - If the worktree was deleted, it's recreated at the same path before resuming
-3. **Run resume from the original repository** - The script needs git context to recreate worktrees
-
-```bash
-# View session history (our worktree log)
-claude-autonomous --list
-
-# Resume most recent session (uses our logged session ID)
-claude-autonomous --continue
-
-# Open Claude's interactive session picker
-claude-autonomous --resume
-
-# Resume specific session by ID
-claude-autonomous --resume <uuid-from-list>
-```
-
-Our log at `/tmp/claude-sessions.txt` tracks worktree sessions with format:
-`timestamp session_id repo_name worktree_path details`
-
-When resuming, no new worktree is created - you resume in your current directory with the previous conversation context.
-
-### How It Survives
-
-1. **Crash Recovery**: The `while` loop auto-restarts Claude with `--resume` using the same session ID
-2. **Context Compaction**: `ActiveOrchestration` marker in MCP Memory triggers automatic resume
-3. **State Persistence**: All work state lives in GitHub (project board, issues, PRs) - nothing is lost
-
-### What It Will Do
-
-The autonomous orchestrator will:
-
-1. **Bootstrap**: Resolve any existing open PRs before starting new work
-2. **Detect Scope**: Find all open issues, epics, and milestones
-3. **Spawn Workers**: Run up to 5 parallel workers in isolated git worktrees
-4. **Monitor CI**: Watch PR checks, auto-merge when passing (with review artifacts)
-5. **Handle Failures**: Research and retry failed tasks up to 3 times before blocking
-6. **Sleep/Wake**: Enter sleep mode when waiting on CI, wake on next session
-7. **Complete**: Exit when no issues, PRs, or in-progress work remains
-
-### Monitoring Progress
-
-```bash
-# View session log
-tail -f /tmp/claude-sessions.txt
-
-# Check GitHub project status
-gh project item-list $GITHUB_PROJECT_NUM --owner "$GH_PROJECT_OWNER" --format json | \
-  jq '.items[] | {number: .content.number, title: .content.title, status: .status.name}'
-
-# Check orchestration tracking issue
-gh issue list --label "orchestration-tracking" --json number,title,state
-```
-
-### Stopping Autonomous Mode
-
-To gracefully stop:
-
-1. Create a `do-not-merge` label on any PR to pause merging
-2. Close the orchestration tracking issue
-3. Or simply `Ctrl+C` - state is preserved in GitHub, resume anytime
-
----
-
-## Environment Requirements
-
-### Required CLI Tools
-
-| Tool | Purpose | Verification |
-|------|---------|--------------|
-| `gh` | GitHub CLI | `gh auth status` - must show logged in |
-| `git` | Version control (2.5+) | `git --version` - worktrees require 2.5+ |
-
-### Optional CLI Tools
-
-| Tool | Purpose | Verification |
-|------|---------|--------------|
-| `pnpm` | Node.js package manager | `pnpm --version` |
-| `op` | 1Password CLI | `op account list` |
-
-### Required Environment Variables
-
-| Variable | Example | Purpose |
-|----------|---------|---------|
-| `GITHUB_PROJECT` | `https://github.com/users/troykelly/projects/4` | Target project URL |
-| `GITHUB_OWNER` | `troykelly` | Repository/project owner (user or org) |
-| `GITHUB_REPO` | `homeassistant-zowietek` | Repository name |
-| `GITHUB_PROJECT_NUM` | `4` | Project number from URL |
-
-### Optional Environment Variables
-
-| Variable | Example | Purpose |
-|----------|---------|---------|
-| `GITHUB_TOKEN` | `ghp_xxxx...` | GitHub API token (auto-fetched from `gh auth token` if not set) |
-| `PEXELS_API_KEY` | `abc123...` | Pexels API key for media sourcing (required for `pexels-media` skill) |
-| `MAX_CRASHES` | `10` | Maximum crashes before autonomous mode gives up (default: 10) |
-
-### Required MCP Servers
-
-| Server | Purpose | Critical Functions |
-|--------|---------|-------------------|
-| `mcp__git` | Git operations | status, diff, commit, branch, checkout |
-| `mcp__memory` | Knowledge graph | Persistent context across sessions |
-
-### Recommended MCP Servers
-
-| Server | Purpose | Used By |
-|--------|---------|---------|
-| `mcp__playwright` | Browser automation | E2E verification |
-| `mcp__puppeteer` | Browser automation | E2E verification (alternative) |
-
-### Required Plugins
-
-| Plugin | Purpose |
-|--------|---------|
-| `episodic-memory` | Cross-session conversation recall |
-
----
-
-## GitHub Project Structure
-
-### Required Fields
-
-| Field | Type | Values | Purpose |
-|-------|------|--------|---------|
-| `Status` | Single select | `Backlog`, `Ready`, `In Progress`, `In Review`, `Done`, `Blocked` | Work state |
-| `Verification` | Single select | `Not Verified`, `Failing`, `Partial`, `Passing` | Test status |
-| `Criteria Met` | Number | 0-N | Checked acceptance criteria count |
-| `Criteria Total` | Number | N | Total acceptance criteria |
-| `Priority` | Single select | `Critical`, `High`, `Medium`, `Low` | Ordering |
-| `Type` | Single select | `Feature`, `Bug`, `Chore`, `Research`, `Spike` | Categorization |
-| `Last Verified` | Date | ISO timestamp | When verification ran |
-| `Verified By` | Text | `agent` / `human` / `ci` | Who verified |
-
-### Required Labels
-
-| Label | Color | Purpose |
-|-------|-------|---------|
-| `parent` | `#0E8A16` | Issue has sub-issues |
-| `sub-issue` | `#1D76DB` | Issue is child of parent |
-| `blocked` | `#D93F0B` | Cannot proceed |
-| `needs-research` | `#FBCA04` | Research required |
-| `verified` | `#0E8A16` | E2E verification passed |
-
----
-
-## Skills Reference
-
-### Orchestration & Meta
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`autonomous-operation`](skills/autonomous-operation/SKILL.md) | Meta | Override token limits, work until goal achieved |
-| [`issue-driven-development`](skills/issue-driven-development/SKILL.md) | Checklist | Master 13-step coding process |
-| [`session-start`](skills/session-start/SKILL.md) | Protocol | Get bearings at session start |
-
-### Issue & Project Management
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`issue-prerequisite`](skills/issue-prerequisite/SKILL.md) | Gate | Ensure GitHub issue exists |
-| [`issue-decomposition`](skills/issue-decomposition/SKILL.md) | Protocol | Break large issues into sub-issues |
-| [`issue-lifecycle`](skills/issue-lifecycle/SKILL.md) | Discipline | Continuous issue updates |
-| [`project-status-sync`](skills/project-status-sync/SKILL.md) | Protocol | Update GitHub Project fields |
-| [`acceptance-criteria-verification`](skills/acceptance-criteria-verification/SKILL.md) | Protocol | Verify and report on criteria |
-
-### Branch & Git
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`branch-discipline`](skills/branch-discipline/SKILL.md) | Gate | Never work on main |
-| [`clean-commits`](skills/clean-commits/SKILL.md) | Discipline | Atomic, descriptive commits |
-
-### Research & Memory
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`research-after-failure`](skills/research-after-failure/SKILL.md) | Protocol | Research after 2 failures |
-| [`pre-work-research`](skills/pre-work-research/SKILL.md) | Protocol | Research before coding |
-| [`memory-integration`](skills/memory-integration/SKILL.md) | Protocol | Use episodic + knowledge graph |
-
-### Development Standards
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`strict-typing`](skills/strict-typing/SKILL.md) | Standard | No `any` types |
-| [`style-guide-adherence`](skills/style-guide-adherence/SKILL.md) | Standard | Google style guides |
-| [`inline-documentation`](skills/inline-documentation/SKILL.md) | Standard | Complete JSDoc/docstrings |
-| [`inclusive-language`](skills/inclusive-language/SKILL.md) | Standard | Respectful terminology |
-| [`ipv6-first`](skills/ipv6-first/SKILL.md) | Standard | IPv6 primary, IPv4 legacy only |
-| [`tdd-full-coverage`](skills/tdd-full-coverage/SKILL.md) | Protocol | TDD with full coverage |
-| [`no-deferred-work`](skills/no-deferred-work/SKILL.md) | Discipline | No TODOs |
-
-### Code Review
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`comprehensive-review`](skills/comprehensive-review/SKILL.md) | Checklist | 7-criteria review |
-| [`review-scope`](skills/review-scope/SKILL.md) | Decision | Minor vs major scope |
-| [`apply-all-findings`](skills/apply-all-findings/SKILL.md) | Discipline | Implement all recommendations |
-
-### PR & CI
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`pr-creation`](skills/pr-creation/SKILL.md) | Protocol | Complete PR documentation |
-| [`ci-monitoring`](skills/ci-monitoring/SKILL.md) | Protocol | Monitor and fix CI |
-| [`verification-before-merge`](skills/verification-before-merge/SKILL.md) | Gate | All checks before merge |
-
-### Recovery & Environment
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`error-recovery`](skills/error-recovery/SKILL.md) | Protocol | Graceful failure handling |
-| [`environment-bootstrap`](skills/environment-bootstrap/SKILL.md) | Protocol | Dev environment setup |
-| [`conflict-resolution`](skills/conflict-resolution/SKILL.md) | Protocol | Merge conflict handling |
-
-### Media & Assets
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`pexels-media`](skills/pexels-media/SKILL.md) | Protocol | Source images/videos from Pexels with mandatory sidecar metadata |
-
-### Work Planning & Architecture
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`work-intake`](skills/work-intake/SKILL.md) | Entry Point | Triage all requests from trivial to massive, route to appropriate workflow |
-| [`initiative-architecture`](skills/initiative-architecture/SKILL.md) | Protocol | Multi-epic planning with research spikes, decision logs, and resumable context |
-| [`epic-management`](skills/epic-management/SKILL.md) | Protocol | Feature-level issue grouping with epic labels and tracking issues |
-| [`milestone-management`](skills/milestone-management/SKILL.md) | Protocol | Time-based issue grouping for delivery phases and releases |
-
-### Autonomous Orchestration
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`autonomous-orchestration`](skills/autonomous-orchestration/SKILL.md) | Controller | Long-running autonomous work across multiple issues with parallel workers |
-| [`worker-dispatch`](skills/worker-dispatch/SKILL.md) | Protocol | Spawn isolated worker processes in git worktrees |
-| [`worker-protocol`](skills/worker-protocol/SKILL.md) | Contract | Behavioral protocol for spawned worker agents |
-| [`worker-handover`](skills/worker-handover/SKILL.md) | Protocol | Context transfer when workers hit turn limits |
-
-### Documentation Enforcement
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`api-documentation`](skills/api-documentation/SKILL.md) | Gate | Enforce Swagger/OpenAPI sync on API changes |
-| [`features-documentation`](skills/features-documentation/SKILL.md) | Gate | Enforce features.md sync on user-facing changes |
-| [`documentation-audit`](skills/documentation-audit/SKILL.md) | Remediation | Comprehensive documentation sync when drift detected |
-
-### Database (PostgreSQL 18, PostGIS 3.6.1, TimescaleDB 2.24.0)
-
-| Skill | Type | Description |
-|-------|------|-------------|
-| [`postgres-rls`](skills/postgres-rls/SKILL.md) | Security | Row Level Security best practices and bypass vulnerability prevention |
-| [`database-architecture`](skills/database-architecture/SKILL.md) | Standard | PostgreSQL 18 schema design, migrations, indexing (AIO, UUIDv7, temporal constraints) |
-| [`postgis`](skills/postgis/SKILL.md) | Standard | PostGIS 3.6.1 spatial data, geometry/geography types, ST_CoverageClean, SFCGAL |
-| [`timescaledb`](skills/timescaledb/SKILL.md) | Standard | TimescaleDB 2.24.0 hypertables, continuous aggregates, compression, recompression |
-
----
-
-## The Coding Process (13 Steps)
-
-This is the master workflow implemented by `issue-driven-development`:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  1. ISSUE CHECK                                                 │
-│     Am I working on a clearly defined GitHub issue?             │
-│     → No: Ask questions, UPDATE issue, then proceed             │
-│     → Skills: issue-prerequisite                                │
-├─────────────────────────────────────────────────────────────────┤
-│  2. READ COMMENTS                                               │
-│     Are there comments on the issue I need to read?             │
-│     → Skills: issue-lifecycle                                   │
-├─────────────────────────────────────────────────────────────────┤
-│  3. SIZE CHECK                                                  │
-│     Is this issue too large for a single task?                  │
-│     → Yes: Break into sub-issues, loop back to step 1           │
-│     → Skills: issue-decomposition                               │
-├─────────────────────────────────────────────────────────────────┤
-│  4. MEMORY SEARCH                                               │
-│     Search for previous work on this or related issues          │
-│     → Skills: memory-integration                                │
-├─────────────────────────────────────────────────────────────────┤
-│  5. RESEARCH                                                    │
-│     Do I need research to complete this task?                   │
-│     → Repo docs? Codebase? Online?                              │
-│     → Skills: pre-work-research                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  6. BRANCH CHECK                                                │
-│     Am I on the correct branch? Need new branch?                │
-│     → Skills: branch-discipline                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  7. TDD DEVELOPMENT                                             │
-│     Commence TDD with full code coverage                        │
-│     → Skills: tdd-full-coverage, strict-typing,                 │
-│       inline-documentation, inclusive-language                  │
-├─────────────────────────────────────────────────────────────────┤
-│  8. VERIFICATION LOOP                                           │
-│     Did I succeed? If not, back to step 7                       │
-│     After 2 failures → research-after-failure                   │
-│     → Skills: acceptance-criteria-verification                  │
-├─────────────────────────────────────────────────────────────────┤
-│  9. CODE REVIEW                                                 │
-│     Review against 7 criteria                                   │
-│     → Skills: review-scope, comprehensive-review                │
-├─────────────────────────────────────────────────────────────────┤
-│ 10. IMPLEMENT FINDINGS                                          │
-│     Apply ALL review recommendations                            │
-│     → Skills: apply-all-findings                                │
-├─────────────────────────────────────────────────────────────────┤
-│ 11. RUN TESTS                                                   │
-│     Run full relevant test suite                                │
-│     → Skills: tdd-full-coverage                                 │
-├─────────────────────────────────────────────────────────────────┤
-│ 12. RAISE PR                                                    │
-│     Create PR with complete documentation                       │
-│     → Skills: pr-creation, clean-commits                        │
-├─────────────────────────────────────────────────────────────────┤
-│ 13. CI MONITORING                                               │
-│     Monitor CI, resolve issues until green                      │
-│     → Skills: ci-monitoring, verification-before-merge          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Note:** Issue updates happen THROUGHOUT this process, not documented as a separate step.
-
----
-
-## Verification Report Format
-
-When verifying acceptance criteria, post structured comments:
-
-```markdown
-## Verification Report
-**Run**: 2024-12-02T14:30:00Z
-**By**: agent
-
-### Results
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| User can click "New Chat" button | PASS | |
-| New conversation appears in sidebar | PASS | |
-| Chat area shows welcome state | FAIL | Welcome message not rendering |
-| Previous conversation is preserved | PARTIAL | Works but slow |
-
-### Summary
-- **Passing**: 2/4
-- **Failing**: 1/4
-- **Partial**: 1/4
-
-### Next Steps
-- Investigate welcome message rendering issue
-- Profile conversation preservation performance
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| `gh` not authenticated | Run `gh auth login` |
-| Project fields missing | Run field creation commands from Quick Start |
-| MCP server not connected | Check Claude Code MCP configuration |
-| Environment variable not set | Add to shell profile or set before session |
-| Worktree creation fails | Run `git worktree prune` to clean stale entries |
-| Default branch detection fails | Ensure `origin` remote is configured correctly |
-| Git version too old | Upgrade git to 2.5+ for worktree support |
-| Epic not found | Verify issue number exists: `gh issue view <N>` |
-| Epic is closed | Reopen the issue or choose a different epic |
-| No origin remote | Add remote: `git remote add origin <url>` |
-
-### Recovery Procedures
-
-See [`error-recovery`](skills/recovery-environment/error-recovery/SKILL.md) for detailed recovery protocols.
+</details>
 
 ---
 
 ## Contributing
 
-These skills are opinionated by design. If you disagree with a principle, that's fine - fork and adapt. The goal is consistency within a project, not universal agreement.
+These skills are opinionated by design. If you disagree with a principle, fork and adapt. The goal is consistency within a project, not universal agreement.
 
 ## References
 

@@ -8,9 +8,9 @@
 # Options:
 #   -e, --epic <N>       Focus on specific epic number
 #   -n, --new            Interactive mode: bootstrap and wait for instructions
-#   -c, --continue       Resume the most recent session automatically
-#   --resume [ID]        Resume a specific session (or pick from list if no ID)
-#   -l, --list           List recent sessions
+#   -c, --continue       Resume the most recent session (uses Claude's native --continue)
+#   --resume [ID]        Resume a session: opens Claude's picker, or resumes specific ID
+#   -l, --list           List worktree session history
 #   -r, --repo <path>    Repository path (default: current directory)
 #   -h, --help           Show this help message
 #
@@ -26,9 +26,8 @@
 #   claude-autonomous --epic 42          # Focus on Epic #42
 #   claude-autonomous --new              # Bootstrap and wait for instructions
 #   claude-autonomous --continue         # Resume most recent session
-#   claude-autonomous --resume           # Pick a session to resume
-#   claude-autonomous --resume abc123    # Resume specific session
-#   claude-autonomous --list             # Show recent sessions
+#   claude-autonomous --resume           # Open Claude's session picker
+#   claude-autonomous --list             # Show worktree history
 #   WORK_EPIC=10 claude-autonomous       # Focus on Epic #10
 #
 # Documentation: https://github.com/troykelly/claude-skills
@@ -51,31 +50,8 @@ CONTINUE_MODE=false
 RESUME_SESSION=""
 SESSION_LOG="/tmp/claude-sessions.txt"
 
-# Helper: get most recent session ID
-get_latest_session() {
-  if [[ -f "$SESSION_LOG" ]]; then
-    tail -1 "$SESSION_LOG" | awk '{print $2}'
-  fi
-}
-
-# Helper: display sessions with numbers for selection
-list_sessions_numbered() {
-  if [[ ! -f "$SESSION_LOG" ]]; then
-    echo "  No sessions recorded yet."
-    return 1
-  fi
-  local count=0
-  tail -10 "$SESSION_LOG" | tac | while read -r line; do
-    count=$((count + 1))
-    local session_id
-    session_id=$(echo "$line" | awk '{print $2}')
-    local timestamp
-    timestamp=$(echo "$line" | awk '{print $1}')
-    local details
-    details=$(echo "$line" | cut -d' ' -f4-)
-    echo -e "  ${CYAN}[$count]${NC} $session_id  $timestamp  $details"
-  done
-}
+# Note: Session resume uses Claude's native --continue and --resume flags
+# Our session log is for reference only (worktree tracking)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -108,19 +84,27 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     -l|--list)
-      echo -e "${CYAN}Recent Sessions:${NC}"
+      echo -e "${CYAN}Worktree Session History:${NC}"
       echo ""
       if [[ -f "$SESSION_LOG" ]]; then
-        tail -20 "$SESSION_LOG" | while read -r line; do
-          echo "  $line"
+        # Format: timestamp session_id repo_name worktree_path details
+        echo -e "  ${BLUE}SESSION ID                            REPO           DETAILS${NC}"
+        echo -e "  ─────────────────────────────────────────────────────────────────────────"
+        tail -20 "$SESSION_LOG" | tac | while read -r line; do
+          sid=$(echo "$line" | awk '{print $2}')
+          repo=$(echo "$line" | awk '{print $3}')
+          details=$(echo "$line" | cut -d' ' -f5-)
+          printf "  %-37s %-14s %s\n" "$sid" "$repo" "$details"
         done
       else
         echo "  No sessions recorded yet."
       fi
       echo ""
-      echo -e "Resume most recent:     ${CYAN}claude-autonomous --continue${NC}"
-      echo -e "Resume specific:        ${CYAN}claude-autonomous --resume <session-id>${NC}"
-      echo -e "Pick from list:         ${CYAN}claude-autonomous --resume${NC}"
+      echo -e "${YELLOW}To resume a session:${NC}"
+      echo ""
+      echo -e "  Most recent session:  ${CYAN}claude-autonomous --continue${NC}"
+      echo -e "  Session picker:       ${CYAN}claude-autonomous --resume${NC}"
+      echo -e "  Specific session:     ${CYAN}claude-autonomous --resume <session-id>${NC}"
       exit 0
       ;;
     -r|--repo)
@@ -146,18 +130,73 @@ done
 # Use WORK_EPIC env var if --epic not provided
 EPIC="${EPIC:-${WORK_EPIC:-}}"
 
+# Session log format: timestamp session_id repo_name worktree_path details
+# Example: 2026-01-03T12:00:00+00:00 abc-123 my-repo /tmp/claude-worktrees/my-repo/abc-123 epic=#42 "Title"
+
+# Helper: get session info from log by session ID
+get_session_info() {
+  local session_id="$1"
+  if [[ -f "$SESSION_LOG" ]]; then
+    grep " ${session_id} " "$SESSION_LOG" | tail -1
+  fi
+}
+
+# Helper: get most recent session line from log
+get_latest_session() {
+  if [[ -f "$SESSION_LOG" ]]; then
+    tail -1 "$SESSION_LOG"
+  fi
+}
+
 # Handle --continue mode (resume most recent session)
 if [[ "$CONTINUE_MODE" == "true" ]]; then
-  LATEST_SESSION=$(get_latest_session)
-  if [[ -z "$LATEST_SESSION" ]]; then
-    echo -e "${RED}Error: No previous sessions found${NC}"
-    echo "Start a new session with: claude-autonomous"
+  # Check claude is available
+  if ! command -v claude &>/dev/null; then
+    echo -e "${RED}Error: claude CLI not found${NC}"
     exit 1
   fi
-  RESUME_SESSION="$LATEST_SESSION"
+
+  LATEST=$(get_latest_session)
+  if [[ -z "$LATEST" ]]; then
+    echo -e "${YELLOW}No sessions in our log. Using Claude's native --continue...${NC}"
+    exec claude --dangerously-skip-permissions --continue
+  fi
+
+  # Parse session info: timestamp session_id repo_name worktree_path details
+  SESSION_ID=$(echo "$LATEST" | awk '{print $2}')
+  SESSION_REPO=$(echo "$LATEST" | awk '{print $3}')
+  # Note: worktree path is field 4, details start at field 5
+  SESSION_DETAILS=$(echo "$LATEST" | cut -d' ' -f5-)
+
+  echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC}              ${GREEN}Resuming Most Recent Session${NC}                     ${CYAN}║${NC}"
+  echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "${BLUE}Session ID:${NC}   ${SESSION_ID}"
+  echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
+  echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+  echo ""
+
+  # Sessions are directory-scoped. Try to find the repo.
+  # First check if we're already in a git repo
+  if git rev-parse --show-toplevel &>/dev/null; then
+    CURRENT_REPO=$(basename "$(git rev-parse --show-toplevel)")
+    if [[ "$CURRENT_REPO" == "$SESSION_REPO" ]]; then
+      echo -e "${GREEN}Already in correct repository. Resuming...${NC}"
+      echo ""
+      exec claude --dangerously-skip-permissions --resume "${SESSION_ID}"
+    fi
+  fi
+
+  # Not in correct repo - try to find it
+  echo -e "${YELLOW}Note:${NC} Sessions are directory-scoped. For best results, run from the ${SESSION_REPO} repository."
+  echo ""
+  echo -e "${GREEN}Attempting resume with session ID...${NC}"
+  echo ""
+  exec claude --dangerously-skip-permissions --resume "${SESSION_ID}"
 fi
 
-# Handle session resume (--continue or --resume)
+# Handle --resume mode (interactive or specific session)
 if [[ -n "$RESUME_SESSION" ]]; then
   # Check claude is available
   if ! command -v claude &>/dev/null; then
@@ -165,61 +204,54 @@ if [[ -n "$RESUME_SESSION" ]]; then
     exit 1
   fi
 
-  # Interactive selection mode
-  if [[ "$RESUME_SESSION" == "INTERACTIVE" ]]; then
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}              ${GREEN}Select Session to Resume${NC}                         ${CYAN}║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-
-    if [[ ! -f "$SESSION_LOG" ]]; then
-      echo -e "${RED}No sessions recorded yet.${NC}"
-      echo "Start a new session with: claude-autonomous"
-      exit 1
-    fi
-
-    # Build array of sessions (most recent first)
-    mapfile -t SESSIONS < <(tail -10 "$SESSION_LOG" | tac)
-
-    if [[ ${#SESSIONS[@]} -eq 0 ]]; then
-      echo -e "${RED}No sessions recorded yet.${NC}"
-      exit 1
-    fi
-
-    echo -e "${BLUE}Recent sessions (most recent first):${NC}"
-    echo ""
-    idx=1
-    for session_line in "${SESSIONS[@]}"; do
-      sid=$(echo "$session_line" | awk '{print $2}')
-      ts=$(echo "$session_line" | awk '{print $1}')
-      details=$(echo "$session_line" | cut -d' ' -f4-)
-      echo -e "  ${CYAN}[$idx]${NC} $sid  $ts  $details"
-      idx=$((idx + 1))
-    done
-    echo ""
-    echo -n "Enter number (1-${#SESSIONS[@]}) or session ID: "
-    read -r selection
-
-    # Check if selection is a number
-    if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le ${#SESSIONS[@]} ]]; then
-      RESUME_SESSION=$(echo "${SESSIONS[$((selection-1))]}" | awk '{print $2}')
-    else
-      # Treat as session ID
-      RESUME_SESSION="$selection"
-    fi
-  fi
-
   echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║${NC}              ${GREEN}Resuming Claude Session${NC}                          ${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC}              ${GREEN}Session Resume${NC}                                   ${CYAN}║${NC}"
   echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
   echo ""
-  echo -e "${BLUE}Session ID:${NC} ${RESUME_SESSION}"
-  echo ""
-  echo -e "${GREEN}Resuming session...${NC}"
-  echo ""
 
-  # Simple resume - no worktree, just resume the conversation
-  exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
+  if [[ "$RESUME_SESSION" == "INTERACTIVE" ]]; then
+    # Show our logged sessions for reference
+    if [[ -f "$SESSION_LOG" ]]; then
+      echo -e "${BLUE}Recent autonomous sessions from this script:${NC}"
+      echo ""
+      # Format: timestamp session_id repo_name worktree_path details
+      tail -10 "$SESSION_LOG" | tac | while read -r line; do
+        sid=$(echo "$line" | awk '{print $2}')
+        repo=$(echo "$line" | awk '{print $3}')
+        details=$(echo "$line" | cut -d' ' -f5-)
+        echo -e "  ${CYAN}${sid:0:8}...${NC}  $repo  $details"
+      done
+      echo ""
+    fi
+
+    echo -e "${BLUE}Opening Claude's session picker...${NC}"
+    echo ""
+    echo -e "${YELLOW}Tip:${NC} Use ↑/↓ to navigate, Enter to select, P to preview"
+    echo -e "     Press A to toggle between current directory and all projects"
+    echo ""
+    # Use Claude's native --resume for interactive picker
+    exec claude --dangerously-skip-permissions --resume
+  else
+    # Specific session ID provided
+    SESSION_INFO=$(get_session_info "$RESUME_SESSION")
+    if [[ -n "$SESSION_INFO" ]]; then
+      # Format: timestamp session_id repo_name worktree_path details
+      SESSION_REPO=$(echo "$SESSION_INFO" | awk '{print $3}')
+      SESSION_DETAILS=$(echo "$SESSION_INFO" | cut -d' ' -f5-)
+      echo -e "${BLUE}Session ID:${NC}   ${RESUME_SESSION}"
+      echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
+      echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+      echo ""
+    else
+      echo -e "${BLUE}Session ID:${NC}   ${RESUME_SESSION}"
+      echo -e "${YELLOW}Note:${NC} Session not found in our log (may be a Claude-native session)"
+      echo ""
+    fi
+
+    echo -e "${GREEN}Resuming session...${NC}"
+    echo ""
+    exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
+  fi
 fi
 
 # Change to repo if specified
@@ -350,10 +382,12 @@ git worktree prune 2>/dev/null || true
 # Log session with restricted permissions
 mkdir -p /tmp/claude-worktrees
 chmod 700 /tmp/claude-worktrees 2>/dev/null || true
+# Log session with worktree path for reference
+# Format: timestamp session_id repo_name worktree_path details
 if [[ -n "$EPIC" ]]; then
-  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} epic=#${EPIC} \"${ISSUE_TITLE}\"" >> /tmp/claude-sessions.txt
+  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} ${WORKTREE_DIR} epic=#${EPIC} \"${ISSUE_TITLE}\"" >> /tmp/claude-sessions.txt
 else
-  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} scope=all" >> /tmp/claude-sessions.txt
+  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} ${WORKTREE_DIR} scope=all" >> /tmp/claude-sessions.txt
 fi
 chmod 600 /tmp/claude-sessions.txt 2>/dev/null || true
 

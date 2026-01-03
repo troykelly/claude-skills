@@ -327,9 +327,8 @@ claude-autonomous                    # Work on all issues
 claude-autonomous --epic 42          # Focus on Epic #42
 claude-autonomous --new              # Interactive mode (wait for instructions)
 claude-autonomous --continue         # Resume most recent session
-claude-autonomous --resume           # Pick a session to resume
-claude-autonomous --resume abc123    # Resume specific session
-claude-autonomous --list             # Show recent sessions
+claude-autonomous --resume           # Open Claude's session picker
+claude-autonomous --list             # Show worktree history
 ```
 
 ### Command Line Options
@@ -338,9 +337,9 @@ claude-autonomous --list             # Show recent sessions
 |--------|-------------|
 | `-e, --epic <N>` | Focus on specific epic number (validates issue exists and is open) |
 | `-n, --new` | Interactive mode: bootstrap environment, then wait for instructions |
-| `-c, --continue` | Automatically resume the most recent session |
-| `--resume [ID]` | Resume a specific session, or pick from list if no ID given |
-| `-l, --list` | Show recent sessions with resume instructions |
+| `-c, --continue` | Resume most recent session (uses Claude's native `--continue`) |
+| `--resume [ID]` | Open Claude's session picker, or resume specific session by ID |
+| `-l, --list` | Show worktree session history |
 | `-r, --repo <path>` | Repository path (default: current directory) |
 | `-h, --help` | Show help message |
 
@@ -444,23 +443,29 @@ Each agent gets its own isolated worktree, creates feature branches, and opens P
 
 ### Session Management
 
-Sessions are logged to `/tmp/claude-sessions.txt` with timestamp, ID, repo, and scope:
+Sessions are stored by Claude Code in `~/.claude/projects/<encoded-path>/` and are directory-scoped. For worktree sessions to be resumable:
+
+1. **Run resume commands from the original repository** (not a random directory)
+2. **Sessions from worktrees are visible** from the main repo and other worktrees
 
 ```bash
-# View all sessions
+# View session history (our worktree log)
 claude-autonomous --list
 
-# Resume most recent session automatically
+# Resume most recent session (uses our logged session ID)
 claude-autonomous --continue
 
-# Pick from a list interactively
+# Open Claude's interactive session picker
 claude-autonomous --resume
 
 # Resume specific session by ID
-claude-autonomous --resume abc123-def456
+claude-autonomous --resume <uuid-from-list>
 ```
 
-When resuming, the conversation context is restored but no new worktree is created - you resume in your current directory.
+Our log at `/tmp/claude-sessions.txt` tracks worktree sessions with format:
+`timestamp session_id repo_name worktree_path details`
+
+When resuming, no new worktree is created - you resume in your current directory with the previous conversation context.
 
 ### How It Survives
 
@@ -688,6 +693,15 @@ To gracefully stop:
 | [`api-documentation`](skills/api-documentation/SKILL.md) | Gate | Enforce Swagger/OpenAPI sync on API changes |
 | [`features-documentation`](skills/features-documentation/SKILL.md) | Gate | Enforce features.md sync on user-facing changes |
 | [`documentation-audit`](skills/documentation-audit/SKILL.md) | Remediation | Comprehensive documentation sync when drift detected |
+
+### Database (PostgreSQL 18, PostGIS 3.6.1, TimescaleDB 2.24.0)
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`postgres-rls`](skills/postgres-rls/SKILL.md) | Security | Row Level Security best practices and bypass vulnerability prevention |
+| [`database-architecture`](skills/database-architecture/SKILL.md) | Standard | PostgreSQL 18 schema design, migrations, indexing (AIO, UUIDv7, temporal constraints) |
+| [`postgis`](skills/postgis/SKILL.md) | Standard | PostGIS 3.6.1 spatial data, geometry/geography types, ST_CoverageClean, SFCGAL |
+| [`timescaledb`](skills/timescaledb/SKILL.md) | Standard | TimescaleDB 2.24.0 hypertables, continuous aggregates, compression, recompression |
 
 ---
 

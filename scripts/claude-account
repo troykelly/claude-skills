@@ -6,27 +6,28 @@
 #   claude-account <command> [options]
 #
 # Commands:
-#   capture             Save current account to .env (in current directory)
-#   list                Show all saved accounts in .env
+#   capture             Save current account to .env (credentials + metadata)
+#   list                Show all saved accounts
 #   current             Show current active account
 #   switch              Rotate to next account
 #   switch <email>      Switch to specific account by email
-#   remove [-f] <email> Remove a saved account from .env (prompts for confirmation)
+#   remove [-f] <email> Remove a saved account from .env
 #
 # Environment Variables:
 #   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
 #
-# Examples:
-#   claude-account capture                    # Save current account
-#   claude-account list                       # Show all accounts in .env
-#   claude-account switch                     # Rotate to next
-#   claude-account switch user@example.com   # Switch to specific
-#
 # Storage Format in .env:
-#   CLAUDE_ACCOUNT_<SANITIZED_EMAIL>='{"accountUuid":"...","emailAddress":"...",...}'
-#   CLAUDE_ACCOUNTS_LIST="email1,email2,email3"
+#   CLAUDE_ACCOUNT_<EMAIL>_ACCESSTOKEN=sk-ant-oat01-...
+#   CLAUDE_ACCOUNT_<EMAIL>_REFRESHTOKEN=sk-ant-ort01-...
+#   CLAUDE_ACCOUNT_<EMAIL>_EXPIRESAT=1234567890
+#   CLAUDE_ACCOUNT_<EMAIL>_EMAILADDRESS=user@example.com
+#   CLAUDE_ACCOUNT_<EMAIL>_ACCOUNTUUID=...
+#   CLAUDE_ACCOUNT_<EMAIL>_ORGANIZATIONUUID=...
+#   CLAUDE_ACCOUNT_<EMAIL>_DISPLAYNAME=...
+#   CLAUDE_ACCOUNTS_LIST=email1,email2,email3
 #
-# Config: ~/.claude.json (Claude Code's config)
+# Config: ~/.claude.json (account metadata)
+# Credentials: macOS Keychain / Linux secret-tool
 #
 # Tip: Sync your .env to 1Password for persistence across devcontainer rebuilds
 
@@ -45,10 +46,12 @@ NC='\033[0m'
 CLAUDE_CONFIG="${HOME}/.claude.json"
 ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
 
+# Keychain service name
+KEYCHAIN_SERVICE="Claude Code-credentials"
+
 # Temp file tracking for cleanup
 TEMP_FILES=()
 cleanup_temp_files() {
-  # Check array has elements (compatible with older bash + set -u)
   if [[ ${#TEMP_FILES[@]} -gt 0 ]]; then
     for f in "${TEMP_FILES[@]}"; do
       [[ -f "$f" ]] && rm -f "$f"
@@ -57,7 +60,6 @@ cleanup_temp_files() {
 }
 trap cleanup_temp_files EXIT
 
-# Create tracked temp file
 make_temp() {
   local tmp
   tmp=$(mktemp)
@@ -71,9 +73,6 @@ check_deps() {
   if ! command -v jq &>/dev/null; then
     missing+=("jq")
   fi
-  if ! command -v xxd &>/dev/null; then
-    missing+=("xxd")
-  fi
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo -e "${RED}Error: Missing required dependencies: ${missing[*]}${NC}"
     echo "Install with: brew install ${missing[*]} / apt-get install ${missing[*]}"
@@ -81,10 +80,20 @@ check_deps() {
   fi
 }
 
+# Detect OS and credential storage method
+detect_credential_storage() {
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "keychain"
+  elif command -v secret-tool &>/dev/null; then
+    echo "secret-tool"
+  else
+    echo "none"
+  fi
+}
+
 # Sanitize email for env var name (replace non-alphanumeric with _)
 sanitize_email() {
   local email="$1"
-  # Replace any character that's not alphanumeric with underscore
   echo "$email" | sed 's/[^a-zA-Z0-9]/_/g' | tr '[:lower:]' '[:upper:]'
 }
 
@@ -92,24 +101,25 @@ sanitize_email() {
 email_in_list() {
   local email="$1"
   local list="$2"
-  # Use delimiter matching to avoid partial matches
   [[ ",${list}," == *",${email},"* ]]
 }
 
 # Parse comma-separated list into array, filtering empty elements
+# Note: Uses nameref which requires bash 4.3+. macOS default is 3.2 but Homebrew bash is typically 5.x
 parse_email_list() {
   local list="$1"
   local -n result_array="$2"
   result_array=()
+  local temp_array
   IFS=',' read -ra temp_array <<< "$list"
+  local email
   for email in "${temp_array[@]}"; do
-    # Skip empty elements
     [[ -n "$email" ]] && result_array+=("$email")
   done
 }
 
-# Get current account from ~/.claude.json
-get_current_account() {
+# Get oauthAccount from ~/.claude.json
+get_oauth_account() {
   if [[ ! -f "$CLAUDE_CONFIG" ]]; then
     echo ""
     return
@@ -117,26 +127,40 @@ get_current_account() {
   jq -c '.oauthAccount // empty' "$CLAUDE_CONFIG" 2>/dev/null || echo ""
 }
 
-# Get current email
+# Get current email from ~/.claude.json
 get_current_email() {
   local account
-  account=$(get_current_account)
+  account=$(get_oauth_account)
   if [[ -n "$account" ]]; then
     echo "$account" | jq -r '.emailAddress // empty'
   fi
 }
 
-# Get accounts list from environment variable
-get_accounts_list() {
-  echo "${CLAUDE_ACCOUNTS_LIST:-}"
+# Get credentials from keychain (macOS)
+get_keychain_credentials() {
+  if [[ "$OSTYPE" != "darwin"* ]]; then
+    echo ""
+    return
+  fi
+  security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w 2>/dev/null || echo ""
 }
 
-# Get account data from environment variable by email
-get_account_data() {
-  local email="$1"
-  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")"
-  # Use indirect variable expansion to get the value
-  echo "${!var_name:-}"
+# Set credentials in keychain (macOS)
+set_keychain_credentials() {
+  local creds="$1"
+  if [[ "$OSTYPE" != "darwin"* ]]; then
+    echo -e "${RED}Error: Keychain operations only supported on macOS${NC}"
+    return 1
+  fi
+  # Delete existing entry first (ignore errors if doesn't exist)
+  security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" 2>/dev/null || true
+  # Add new entry
+  security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w "$creds"
+}
+
+# Get accounts list from environment
+get_accounts_list() {
+  echo "${CLAUDE_ACCOUNTS_LIST:-}"
 }
 
 # Get accounts list from .env file (for write operations)
@@ -145,7 +169,28 @@ get_accounts_list_from_file() {
     echo ""
     return
   fi
-  grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
+  grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
+}
+
+# Get account field from environment
+get_account_field() {
+  local email="$1"
+  local field="$2"
+  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")_${field}"
+  echo "${!var_name:-}"
+}
+
+# Escape value for double-quoted shell string
+# Escapes: \ $ ` " ! (the characters that are special inside double quotes)
+escape_for_double_quotes() {
+  local value="$1"
+  # Order matters: escape backslashes first, then the rest
+  value="${value//\\/\\\\}"   # \ -> \\
+  value="${value//\$/\\\$}"   # $ -> \$
+  value="${value//\`/\\\`}"   # ` -> \`
+  value="${value//\"/\\\"}"   # " -> \"
+  value="${value//\!/\\!}"    # ! -> \! (history expansion in interactive bash)
+  echo "$value"
 }
 
 # Update or add line in .env
@@ -153,7 +198,7 @@ update_env_line() {
   local key="$1"
   local value="$2"
 
-  # Create .env if it doesn't exist, with secure permissions
+  # Create .env if doesn't exist, with secure permissions
   if [[ ! -f "$ENV_FILE" ]]; then
     touch "$ENV_FILE"
     chmod 600 "$ENV_FILE"
@@ -168,20 +213,19 @@ update_env_line() {
   fi
 
   # Ensure file ends with newline before appending
-  if [[ -s "$ENV_FILE" ]] && [[ "$(tail -c 1 "$ENV_FILE" | xxd -p)" != "0a" ]]; then
+  if [[ -s "$ENV_FILE" ]] && [[ $(tail -c 1 "$ENV_FILE" | wc -l) -eq 0 ]]; then
     echo "" >> "$ENV_FILE"
   fi
 
-  # Escape single quotes in value (replace ' with '\'' for safe shell quoting)
-  local escaped_value="${value//\'/\'\\\'\'}"
-
-  # Add new line
-  echo "${key}='${escaped_value}'" >> "$ENV_FILE"
+  # Escape value and wrap in double quotes for shell safety
+  local escaped_value
+  escaped_value=$(escape_for_double_quotes "$value")
+  printf '%s="%s"\n' "$key" "$escaped_value" >> "$ENV_FILE"
 }
 
-# Remove line from .env
-remove_env_line() {
-  local key="$1"
+# Remove lines matching prefix from .env
+remove_env_prefix() {
+  local prefix="$1"
 
   if [[ ! -f "$ENV_FILE" ]]; then
     return
@@ -189,11 +233,35 @@ remove_env_line() {
 
   local temp_file
   temp_file=$(make_temp)
-  grep -v "^${key}=" "$ENV_FILE" > "$temp_file" || true
+  grep -v "^${prefix}" "$ENV_FILE" > "$temp_file" || true
   mv "$temp_file" "$ENV_FILE"
 }
 
-# List all saved accounts (reads from environment, not file)
+# Write header comment on first capture
+write_header() {
+  if [[ -s "$ENV_FILE" ]] && [[ $(tail -c 1 "$ENV_FILE" | wc -l) -eq 0 ]]; then
+    echo "" >> "$ENV_FILE"
+  fi
+  cat >> "$ENV_FILE" << 'EOF'
+
+# Claude Code Account Management
+# --------------------------------
+# These variables store Claude Code OAuth credentials for multi-account switching.
+# Managed by: claude-account (https://github.com/troykelly/claude-skills)
+#
+# Commands:
+#   claude-account list              Show all saved accounts
+#   claude-account switch            Rotate to next account
+#   claude-account switch <email>    Switch to specific account
+#   claude-account current           Show current active account
+#   claude-account capture           Save current account (re-run after login)
+#
+# Tip: Sync this .env to 1Password for persistence across devcontainer rebuilds.
+#
+EOF
+}
+
+# List all saved accounts
 list_accounts() {
   local accounts_list
   accounts_list=$(get_accounts_list)
@@ -217,24 +285,29 @@ list_accounts() {
   local emails
   parse_email_list "$accounts_list" emails
   for email in "${emails[@]}"; do
-    local account_data org_name display_name
-    account_data=$(get_account_data "$email")
+    local display_name org_name has_token
 
-    if [[ -z "$account_data" ]]; then
-      echo -e "  ${RED}?${NC} ${email} ${RED}(data missing)${NC}"
-      continue
-    fi
-
-    org_name=$(echo "$account_data" | jq -r '.organizationName // "N/A"')
-    display_name=$(echo "$account_data" | jq -r '.displayName // "N/A"')
+    display_name=$(get_account_field "$email" "DISPLAYNAME")
+    org_name=$(get_account_field "$email" "ORGANIZATIONNAME")
+    has_token=$(get_account_field "$email" "ACCESSTOKEN")
 
     if [[ "$email" == "$current_email" ]]; then
       echo -e "  ${GREEN}*${NC} ${BOLD}${email}${NC} ${GREEN}(active)${NC}"
     else
       echo -e "    ${email}"
     fi
-    echo -e "      ${BLUE}Name:${NC} ${display_name}"
-    echo -e "      ${BLUE}Org:${NC}  ${org_name}"
+
+    if [[ -n "$display_name" ]]; then
+      echo -e "      ${BLUE}Name:${NC} ${display_name}"
+    fi
+    if [[ -n "$org_name" ]]; then
+      echo -e "      ${BLUE}Org:${NC}  ${org_name}"
+    fi
+    if [[ -n "$has_token" ]]; then
+      echo -e "      ${GREEN}Credentials:${NC} saved"
+    else
+      echo -e "      ${RED}Credentials:${NC} missing"
+    fi
     echo ""
     count=$((count + 1))
   done
@@ -244,86 +317,108 @@ list_accounts() {
 
 # Capture current account
 capture_account() {
-  local current_account current_email
-  current_account=$(get_current_account)
+  local cred_storage
+  cred_storage=$(detect_credential_storage)
 
-  if [[ -z "$current_account" ]]; then
+  # Get account metadata from ~/.claude.json
+  local oauth_account
+  oauth_account=$(get_oauth_account)
+
+  if [[ -z "$oauth_account" ]]; then
     echo -e "${RED}Error: No account found in ${CLAUDE_CONFIG}${NC}"
     echo ""
     echo "Log in to Claude Code first with: claude"
     exit 1
   fi
 
-  current_email=$(echo "$current_account" | jq -r '.emailAddress')
+  local current_email
+  current_email=$(echo "$oauth_account" | jq -r '.emailAddress')
 
   if [[ -z "$current_email" || "$current_email" == "null" ]]; then
     echo -e "${RED}Error: Could not read email from current account${NC}"
     exit 1
   fi
 
-  # Check current file state (for write operations, read from file not env)
+  # Get credentials from keychain
+  local credentials=""
+  if [[ "$cred_storage" == "keychain" ]]; then
+    credentials=$(get_keychain_credentials)
+    if [[ -z "$credentials" ]]; then
+      echo -e "${RED}Error: Could not read credentials from keychain${NC}"
+      echo "Make sure you're logged in to Claude Code."
+      exit 1
+    fi
+  else
+    echo -e "${YELLOW}Warning: Credential storage not available (keychain/secret-tool)${NC}"
+    echo "Saving account metadata only - tokens will not be saved."
+  fi
+
+  # Check if first account
   local accounts_list
   accounts_list=$(get_accounts_list_from_file)
   local is_first_account=false
-
   if [[ -z "$accounts_list" ]]; then
     is_first_account=true
   fi
 
-  # Add header comment on first capture
+  # Add header on first capture
   if [[ "$is_first_account" == "true" ]]; then
-    # Ensure file ends with newline before adding header
-    if [[ -s "$ENV_FILE" ]] && [[ "$(tail -c 1 "$ENV_FILE" | xxd -p)" != "0a" ]]; then
-      echo "" >> "$ENV_FILE"
-    fi
-    cat >> "$ENV_FILE" << 'EOF'
-
-# Claude Code Account Management
-# --------------------------------
-# These variables store Claude Code OAuth credentials for multi-account switching.
-# Managed by: claude-account (https://github.com/troykelly/claude-skills)
-#
-# Commands:
-#   claude-account list              Show all saved accounts
-#   claude-account switch            Rotate to next account
-#   claude-account switch <email>    Switch to specific account
-#   claude-account current           Show current active account
-#   claude-account capture           Save current account (re-run after login)
-#
-# Tip: Sync this .env to 1Password for persistence across devcontainer rebuilds.
-#
-EOF
+    write_header
   fi
 
-  # Save account data
-  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$current_email")"
-  update_env_line "$var_name" "$current_account"
+  # Build env var prefix
+  local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$current_email")"
 
+  # Remove any existing entries for this account
+  remove_env_prefix "${prefix}_"
+
+  # Save account metadata fields
+  update_env_line "${prefix}_EMAILADDRESS" "$current_email"
+  update_env_line "${prefix}_ACCOUNTUUID" "$(echo "$oauth_account" | jq -r '.accountUuid // ""')"
+  update_env_line "${prefix}_ORGANIZATIONUUID" "$(echo "$oauth_account" | jq -r '.organizationUuid // ""')"
+  update_env_line "${prefix}_DISPLAYNAME" "$(echo "$oauth_account" | jq -r '.displayName // ""')"
+  update_env_line "${prefix}_ORGANIZATIONNAME" "$(echo "$oauth_account" | jq -r '.organizationName // ""')"
+  update_env_line "${prefix}_ORGANIZATIONROLE" "$(echo "$oauth_account" | jq -r '.organizationRole // ""')"
+  update_env_line "${prefix}_HASEXTRAUSAGEENABLED" "$(echo "$oauth_account" | jq -r '.hasExtraUsageEnabled // ""')"
+
+  # Save credentials if available
+  if [[ -n "$credentials" ]]; then
+    local oauth_creds
+    oauth_creds=$(echo "$credentials" | jq -r '.claudeAiOauth // empty')
+    if [[ -n "$oauth_creds" ]]; then
+      update_env_line "${prefix}_ACCESSTOKEN" "$(echo "$oauth_creds" | jq -r '.accessToken // ""')"
+      update_env_line "${prefix}_REFRESHTOKEN" "$(echo "$oauth_creds" | jq -r '.refreshToken // ""')"
+      update_env_line "${prefix}_EXPIRESAT" "$(echo "$oauth_creds" | jq -r '.expiresAt // ""')"
+      update_env_line "${prefix}_SCOPES" "$(echo "$oauth_creds" | jq -r '(.scopes // []) | join(",")')"
+      update_env_line "${prefix}_SUBSCRIPTIONTYPE" "$(echo "$oauth_creds" | jq -r '.subscriptionType // ""')"
+      update_env_line "${prefix}_RATELIMITTIER" "$(echo "$oauth_creds" | jq -r '.rateLimitTier // ""')"
+    fi
+  fi
+
+  # Update accounts list
   if [[ "$is_first_account" == "true" ]]; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "$current_email"
   elif ! email_in_list "$current_email" "$accounts_list"; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "${accounts_list},${current_email}"
   fi
-  # If already in list, don't need to update list (just updated data above)
 
   echo -e "${GREEN}Captured account:${NC} ${current_email}"
   echo -e "${BLUE}Saved to:${NC} ${ENV_FILE}"
 
-  local count=0
-  local emails
+  # Show count
   accounts_list=$(get_accounts_list_from_file)
+  local emails
   parse_email_list "$accounts_list" emails
-  count=${#emails[@]}
-  echo -e "${BLUE}Total saved:${NC} ${count} account(s)"
+  echo -e "${BLUE}Total saved:${NC} ${#emails[@]} account(s)"
   echo ""
   echo -e "${YELLOW}Tip:${NC} Add ${ENV_FILE} to 1Password for persistence across rebuilds"
 }
 
 # Show current account
 show_current() {
-  local current_email current_account
+  local current_email oauth_account
   current_email=$(get_current_email)
-  current_account=$(get_current_account)
+  oauth_account=$(get_oauth_account)
 
   if [[ -z "$current_email" ]]; then
     echo -e "${YELLOW}No account currently logged in.${NC}"
@@ -333,12 +428,12 @@ show_current() {
   echo -e "${CYAN}Current Account:${NC}"
   echo ""
   echo -e "  ${BOLD}${current_email}${NC}"
-  echo -e "  ${BLUE}Name:${NC}    $(echo "$current_account" | jq -r '.displayName // "N/A"')"
-  echo -e "  ${BLUE}Org:${NC}     $(echo "$current_account" | jq -r '.organizationName // "N/A"')"
-  echo -e "  ${BLUE}Role:${NC}    $(echo "$current_account" | jq -r '.organizationRole // "N/A"')"
-  echo -e "  ${BLUE}UUID:${NC}    $(echo "$current_account" | jq -r '.accountUuid // "N/A"')"
+  echo -e "  ${BLUE}Name:${NC}    $(echo "$oauth_account" | jq -r '.displayName // "N/A"')"
+  echo -e "  ${BLUE}Org:${NC}     $(echo "$oauth_account" | jq -r '.organizationName // "N/A"')"
+  echo -e "  ${BLUE}Role:${NC}    $(echo "$oauth_account" | jq -r '.organizationRole // "N/A"')"
+  echo -e "  ${BLUE}UUID:${NC}    $(echo "$oauth_account" | jq -r '.accountUuid // "N/A"')"
 
-  # Check if saved in .env
+  # Check if saved in env
   local accounts_list
   accounts_list=$(get_accounts_list)
   if email_in_list "$current_email" "$accounts_list"; then
@@ -348,7 +443,7 @@ show_current() {
   fi
 }
 
-# Switch account (reads from environment, writes to ~/.claude.json)
+# Switch account
 switch_account() {
   local target_email="${1:-}"
 
@@ -378,11 +473,10 @@ switch_account() {
     exit 0
   fi
 
-  local current_email new_email new_data
+  local current_email new_email
   current_email=$(get_current_email)
 
   if [[ -n "$target_email" ]]; then
-    # Switch to specific account
     if ! email_in_list "$target_email" "$accounts_list"; then
       echo -e "${RED}Error: Account not found: ${target_email}${NC}"
       echo ""
@@ -406,7 +500,6 @@ switch_account() {
       fi
     done
 
-    # If we didn't find next, wrap to first
     if [[ -z "$new_email" ]]; then
       new_email="${emails[0]}"
     fi
@@ -417,30 +510,82 @@ switch_account() {
     exit 0
   fi
 
-  new_data=$(get_account_data "$new_email")
+  # Check we have credentials for the new account
+  local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$new_email")"
+  local access_token
+  access_token=$(get_account_field "$new_email" "ACCESSTOKEN")
 
-  if [[ -z "$new_data" ]]; then
-    echo -e "${RED}Error: Account data missing for: ${new_email}${NC}"
-    echo "Try recapturing the account."
+  if [[ -z "$access_token" ]]; then
+    echo -e "${RED}Error: No credentials found for: ${new_email}${NC}"
+    echo "The account metadata exists but tokens are missing."
     exit 1
   fi
 
-  # Update ~/.claude.json
-  if [[ ! -f "$CLAUDE_CONFIG" ]]; then
-    echo -e "${RED}Error: ${CLAUDE_CONFIG} not found${NC}"
-    exit 1
-  fi
-
-  # Backup current config with timestamp
+  # Backup current config
   local backup_file="${CLAUDE_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
   cp "$CLAUDE_CONFIG" "$backup_file"
   echo -e "${BLUE}Backup:${NC} ${backup_file}"
 
-  # Update oauthAccount
+  # Build new oauthAccount JSON
+  local has_extra_usage
+  has_extra_usage=$(get_account_field "$new_email" "HASEXTRAUSAGEENABLED")
+  # Exact string match for boolean (not substring match)
+  [[ "$has_extra_usage" == "true" ]] && has_extra_usage="true" || has_extra_usage="false"
+
+  local new_oauth_account
+  new_oauth_account=$(jq -n \
+    --arg accountUuid "$(get_account_field "$new_email" "ACCOUNTUUID")" \
+    --arg emailAddress "$(get_account_field "$new_email" "EMAILADDRESS")" \
+    --arg organizationUuid "$(get_account_field "$new_email" "ORGANIZATIONUUID")" \
+    --arg displayName "$(get_account_field "$new_email" "DISPLAYNAME")" \
+    --arg organizationName "$(get_account_field "$new_email" "ORGANIZATIONNAME")" \
+    --arg organizationRole "$(get_account_field "$new_email" "ORGANIZATIONROLE")" \
+    --argjson hasExtraUsageEnabled "$has_extra_usage" \
+    '{
+      accountUuid: $accountUuid,
+      emailAddress: $emailAddress,
+      organizationUuid: $organizationUuid,
+      hasExtraUsageEnabled: $hasExtraUsageEnabled,
+      displayName: $displayName,
+      organizationRole: $organizationRole,
+      workspaceRole: null,
+      organizationName: $organizationName
+    }')
+
+  # Update ~/.claude.json
   local temp_file
   temp_file=$(make_temp)
-  jq --argjson new_account "$new_data" '.oauthAccount = $new_account' "$CLAUDE_CONFIG" > "$temp_file"
+  jq --argjson new_account "$new_oauth_account" '.oauthAccount = $new_account' "$CLAUDE_CONFIG" > "$temp_file"
   mv "$temp_file" "$CLAUDE_CONFIG"
+
+  # Build new credentials JSON and update keychain
+  local scopes_json expires_at_val
+  scopes_json=$(get_account_field "$new_email" "SCOPES" | tr ',' '\n' | jq -R . | jq -s .)
+  expires_at_val=$(get_account_field "$new_email" "EXPIRESAT")
+  # Default to 0 if empty (jq --argjson fails on empty string)
+  [[ -z "$expires_at_val" ]] && expires_at_val="0"
+
+  local new_credentials
+  new_credentials=$(jq -n \
+    --arg accessToken "$(get_account_field "$new_email" "ACCESSTOKEN")" \
+    --arg refreshToken "$(get_account_field "$new_email" "REFRESHTOKEN")" \
+    --argjson expiresAt "$expires_at_val" \
+    --argjson scopes "$scopes_json" \
+    --arg subscriptionType "$(get_account_field "$new_email" "SUBSCRIPTIONTYPE")" \
+    --arg rateLimitTier "$(get_account_field "$new_email" "RATELIMITTIER")" \
+    '{claudeAiOauth: {
+      accessToken: $accessToken,
+      refreshToken: $refreshToken,
+      expiresAt: $expiresAt,
+      scopes: $scopes,
+      subscriptionType: $subscriptionType,
+      rateLimitTier: $rateLimitTier
+    }}')
+
+  if [[ "$(detect_credential_storage)" == "keychain" ]]; then
+    set_keychain_credentials "$new_credentials"
+    echo -e "${GREEN}Updated keychain credentials${NC}"
+  fi
 
   echo -e "${GREEN}Switched account:${NC}"
   echo -e "  ${YELLOW}From:${NC} ${current_email:-"(none)"}"
@@ -454,7 +599,6 @@ remove_account() {
   local force=false
   local target_email=""
 
-  # Parse args
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -f|--force)
@@ -474,7 +618,6 @@ remove_account() {
     exit 1
   fi
 
-  # For write operations, read from file not env
   local accounts_list
   accounts_list=$(get_accounts_list_from_file)
 
@@ -488,7 +631,6 @@ remove_account() {
     exit 1
   fi
 
-  # Confirm unless --force
   if [[ "$force" != "true" ]]; then
     echo -e "${YELLOW}Remove account: ${target_email}${NC}"
     echo -n "Are you sure? [y/N] "
@@ -499,9 +641,9 @@ remove_account() {
     fi
   fi
 
-  # Remove account data
-  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$target_email")"
-  remove_env_line "$var_name"
+  # Remove all account fields
+  local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$target_email")"
+  remove_env_prefix "${prefix}_"
 
   # Update accounts list
   local new_list=""
@@ -518,7 +660,11 @@ remove_account() {
   done
 
   if [[ -z "$new_list" ]]; then
-    remove_env_line "CLAUDE_ACCOUNTS_LIST"
+    # Remove the list entirely if no accounts left
+    local temp_file
+    temp_file=$(make_temp)
+    grep -v "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" > "$temp_file" || true
+    mv "$temp_file" "$ENV_FILE"
   else
     update_env_line "CLAUDE_ACCOUNTS_LIST" "$new_list"
   fi
@@ -528,7 +674,7 @@ remove_account() {
 
 # Show help
 show_help() {
-  head -32 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
+  head -35 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
 }
 
 # Main

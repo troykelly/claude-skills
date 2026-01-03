@@ -237,8 +237,13 @@ remove_env_prefix() {
   mv "$temp_file" "$ENV_FILE"
 }
 
-# Write header comment on first capture
+# Write header comment on first capture (idempotent - won't duplicate)
 write_header() {
+  # Skip if header already exists
+  if [[ -f "$ENV_FILE" ]] && grep -q "^# Claude Code Account Management" "$ENV_FILE" 2>/dev/null; then
+    return
+  fi
+
   if [[ -s "$ENV_FILE" ]] && [[ $(tail -c 1 "$ENV_FILE" | wc -l) -eq 0 ]]; then
     echo "" >> "$ENV_FILE"
   fi

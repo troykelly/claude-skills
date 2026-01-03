@@ -172,6 +172,35 @@ install_gh() {
   fi
 }
 
+# Install uv/uvx (Python package runner - used for MCP servers like git)
+install_uv() {
+  if has_cmd uvx; then
+    log_success "uv/uvx already installed ($(uv --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+
+  log_info "Installing uv (Python package manager with uvx)..."
+
+  # Use official uv installer
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  # Add to PATH for this session
+  if [[ -d "$HOME/.local/bin" ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  if [[ -d "$HOME/.cargo/bin" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  fi
+
+  if has_cmd uvx; then
+    log_success "uv/uvx installed"
+  else
+    log_warn "uv installed but uvx not in PATH"
+    log_info "Add to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\""
+    return 0
+  fi
+}
+
 # Install Node.js (optional - used for MCP servers like memory, playwright)
 install_node() {
   if has_cmd node; then
@@ -315,6 +344,7 @@ main() {
     esac
 
     install_gh
+    install_uv
     install_node
     install_claude_code
 

@@ -577,7 +577,7 @@ main() {
     echo "  ${step}. Authenticate GitHub CLI:"
     echo -e "     ${CYAN}gh auth login${NC}"
     echo ""
-    ((step++))
+    step=$((step + 1))
   fi
 
   echo "  ${step}. Set required environment variables:"
@@ -585,12 +585,12 @@ main() {
   echo -e "     ${CYAN}export GITHUB_PROJECT_NUM=N${NC}"
   echo -e "     ${CYAN}export GH_PROJECT_OWNER=\"@me\"${NC}"
   echo ""
-  ((step++))
+  step=$((step + 1))
 
   echo "  ${step}. Run autonomous mode from any git repository:"
   echo -e "     ${CYAN}claude-autonomous${NC}"
   echo ""
-  ((step++))
+  step=$((step + 1))
 
   echo "  ${step}. Or focus on a specific epic:"
   echo -e "     ${CYAN}claude-autonomous --epic 42${NC}"

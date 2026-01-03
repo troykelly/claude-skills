@@ -8,6 +8,9 @@
 # Options:
 #   -e, --epic <N>       Focus on specific epic number
 #   -n, --new            Interactive mode: bootstrap and wait for instructions
+#   -c, --continue       Resume the most recent session automatically
+#   --resume [ID]        Resume a specific session (or pick from list if no ID)
+#   -l, --list           List recent sessions
 #   -r, --repo <path>    Repository path (default: current directory)
 #   -h, --help           Show this help message
 #
@@ -22,6 +25,10 @@
 #   claude-autonomous                    # Work on all issues
 #   claude-autonomous --epic 42          # Focus on Epic #42
 #   claude-autonomous --new              # Bootstrap and wait for instructions
+#   claude-autonomous --continue         # Resume most recent session
+#   claude-autonomous --resume           # Pick a session to resume
+#   claude-autonomous --resume abc123    # Resume specific session
+#   claude-autonomous --list             # Show recent sessions
 #   WORK_EPIC=10 claude-autonomous       # Focus on Epic #10
 #
 # Documentation: https://github.com/troykelly/claude-skills
@@ -40,11 +47,44 @@ NC='\033[0m'
 REPO_PATH=""
 EPIC=""
 NEW_MODE=false
+CONTINUE_MODE=false
+RESUME_SESSION=""
+SESSION_LOG="/tmp/claude-sessions.txt"
+
+# Helper: get most recent session ID
+get_latest_session() {
+  if [[ -f "$SESSION_LOG" ]]; then
+    tail -1 "$SESSION_LOG" | awk '{print $2}'
+  fi
+}
+
+# Helper: display sessions with numbers for selection
+list_sessions_numbered() {
+  if [[ ! -f "$SESSION_LOG" ]]; then
+    echo "  No sessions recorded yet."
+    return 1
+  fi
+  local count=0
+  tail -10 "$SESSION_LOG" | tac | while read -r line; do
+    count=$((count + 1))
+    local session_id
+    session_id=$(echo "$line" | awk '{print $2}')
+    local timestamp
+    timestamp=$(echo "$line" | awk '{print $1}')
+    local details
+    details=$(echo "$line" | cut -d' ' -f4-)
+    echo -e "  ${CYAN}[$count]${NC} $session_id  $timestamp  $details"
+  done
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     -e|--epic)
+      if [[ -z "${2:-}" || "$2" == -* ]]; then
+        echo -e "${RED}Error: --epic requires a value${NC}"
+        exit 1
+      fi
       EPIC="$2"
       shift 2
       ;;
@@ -52,12 +92,47 @@ while [[ $# -gt 0 ]]; do
       NEW_MODE=true
       shift
       ;;
+    -c|--continue)
+      CONTINUE_MODE=true
+      shift
+      ;;
+    --resume)
+      # Check if next arg is a session ID (not another flag)
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        RESUME_SESSION="$2"
+        shift 2
+      else
+        # No ID provided - interactive selection mode
+        RESUME_SESSION="INTERACTIVE"
+        shift
+      fi
+      ;;
+    -l|--list)
+      echo -e "${CYAN}Recent Sessions:${NC}"
+      echo ""
+      if [[ -f "$SESSION_LOG" ]]; then
+        tail -20 "$SESSION_LOG" | while read -r line; do
+          echo "  $line"
+        done
+      else
+        echo "  No sessions recorded yet."
+      fi
+      echo ""
+      echo -e "Resume most recent:     ${CYAN}claude-autonomous --continue${NC}"
+      echo -e "Resume specific:        ${CYAN}claude-autonomous --resume <session-id>${NC}"
+      echo -e "Pick from list:         ${CYAN}claude-autonomous --resume${NC}"
+      exit 0
+      ;;
     -r|--repo)
+      if [[ -z "${2:-}" || "$2" == -* ]]; then
+        echo -e "${RED}Error: --repo requires a path${NC}"
+        exit 1
+      fi
       REPO_PATH="$2"
       shift 2
       ;;
     -h|--help)
-      head -30 "$0" | grep -E "^#" | sed 's/^# *//'
+      head -35 "$0" | grep -E "^#" | sed 's/^# *//'
       exit 0
       ;;
     *)
@@ -71,15 +146,105 @@ done
 # Use WORK_EPIC env var if --epic not provided
 EPIC="${EPIC:-${WORK_EPIC:-}}"
 
+# Handle --continue mode (resume most recent session)
+if [[ "$CONTINUE_MODE" == "true" ]]; then
+  LATEST_SESSION=$(get_latest_session)
+  if [[ -z "$LATEST_SESSION" ]]; then
+    echo -e "${RED}Error: No previous sessions found${NC}"
+    echo "Start a new session with: claude-autonomous"
+    exit 1
+  fi
+  RESUME_SESSION="$LATEST_SESSION"
+fi
+
+# Handle session resume (--continue or --resume)
+if [[ -n "$RESUME_SESSION" ]]; then
+  # Check claude is available
+  if ! command -v claude &>/dev/null; then
+    echo -e "${RED}Error: claude CLI not found${NC}"
+    exit 1
+  fi
+
+  # Interactive selection mode
+  if [[ "$RESUME_SESSION" == "INTERACTIVE" ]]; then
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}              ${GREEN}Select Session to Resume${NC}                         ${CYAN}║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    if [[ ! -f "$SESSION_LOG" ]]; then
+      echo -e "${RED}No sessions recorded yet.${NC}"
+      echo "Start a new session with: claude-autonomous"
+      exit 1
+    fi
+
+    # Build array of sessions (most recent first)
+    mapfile -t SESSIONS < <(tail -10 "$SESSION_LOG" | tac)
+
+    if [[ ${#SESSIONS[@]} -eq 0 ]]; then
+      echo -e "${RED}No sessions recorded yet.${NC}"
+      exit 1
+    fi
+
+    echo -e "${BLUE}Recent sessions (most recent first):${NC}"
+    echo ""
+    idx=1
+    for session_line in "${SESSIONS[@]}"; do
+      sid=$(echo "$session_line" | awk '{print $2}')
+      ts=$(echo "$session_line" | awk '{print $1}')
+      details=$(echo "$session_line" | cut -d' ' -f4-)
+      echo -e "  ${CYAN}[$idx]${NC} $sid  $ts  $details"
+      idx=$((idx + 1))
+    done
+    echo ""
+    echo -n "Enter number (1-${#SESSIONS[@]}) or session ID: "
+    read -r selection
+
+    # Check if selection is a number
+    if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le ${#SESSIONS[@]} ]]; then
+      RESUME_SESSION=$(echo "${SESSIONS[$((selection-1))]}" | awk '{print $2}')
+    else
+      # Treat as session ID
+      RESUME_SESSION="$selection"
+    fi
+  fi
+
+  echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC}              ${GREEN}Resuming Claude Session${NC}                          ${CYAN}║${NC}"
+  echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "${BLUE}Session ID:${NC} ${RESUME_SESSION}"
+  echo ""
+  echo -e "${GREEN}Resuming session...${NC}"
+  echo ""
+
+  # Simple resume - no worktree, just resume the conversation
+  exec claude --dangerously-skip-permissions --resume "${RESUME_SESSION}"
+fi
+
 # Change to repo if specified
 if [[ -n "$REPO_PATH" ]]; then
-  cd "$REPO_PATH"
+  if [[ ! -d "$REPO_PATH" ]]; then
+    echo -e "${RED}Error: Directory does not exist: ${REPO_PATH}${NC}"
+    exit 1
+  fi
+  cd "$REPO_PATH" || {
+    echo -e "${RED}Error: Cannot access directory: ${REPO_PATH}${NC}"
+    exit 1
+  }
 fi
 
 # Verify we're in a git repository
 if ! git rev-parse --show-toplevel &>/dev/null; then
   echo -e "${RED}Error: Not in a git repository${NC}"
   echo "Run this command from within a git repository, or use --repo <path>"
+  exit 1
+fi
+
+# Verify origin remote exists
+if ! git remote get-url origin &>/dev/null; then
+  echo -e "${RED}Error: No 'origin' remote configured${NC}"
+  echo "Add a remote with: git remote add origin <url>"
   exit 1
 fi
 
@@ -128,8 +293,37 @@ else
   echo -e "${GREEN}GITHUB_TOKEN already set${NC}"
 fi
 
-# Generate session ID
-SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
+# Validate epic issue exists and is open (if specified)
+if [[ -n "$EPIC" ]]; then
+  echo -e "${YELLOW}Validating Epic #${EPIC}...${NC}"
+
+  # Fetch issue details
+  ISSUE_JSON=$(gh issue view "$EPIC" --json state,title,url 2>/dev/null) || {
+    echo -e "${RED}Error: Epic #${EPIC} not found in this repository${NC}"
+    echo ""
+    echo "Verify the issue number exists: gh issue list"
+    exit 1
+  }
+
+  ISSUE_STATE=$(echo "$ISSUE_JSON" | jq -r '.state')
+  ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
+  ISSUE_URL=$(echo "$ISSUE_JSON" | jq -r '.url')
+
+  if [[ "$ISSUE_STATE" != "OPEN" ]]; then
+    echo -e "${RED}Error: Epic #${EPIC} is ${ISSUE_STATE}${NC}"
+    echo ""
+    echo -e "Title: ${ISSUE_TITLE}"
+    echo -e "URL:   ${CYAN}${ISSUE_URL}${NC}"
+    echo ""
+    echo "Reopen the issue if you want to work on it, then retry."
+    exit 1
+  fi
+
+  echo -e "${GREEN}Epic #${EPIC} validated: ${ISSUE_TITLE}${NC}"
+fi
+
+# Generate session ID (date +%s%N is GNU-only, use $RANDOM for macOS fallback)
+SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-${RANDOM}-${RANDOM}")
 REPO_ROOT=$(git rev-parse --show-toplevel)
 REPO_NAME=$(basename "${REPO_ROOT}")
 WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}"
@@ -156,7 +350,11 @@ git worktree prune 2>/dev/null || true
 # Log session with restricted permissions
 mkdir -p /tmp/claude-worktrees
 chmod 700 /tmp/claude-worktrees 2>/dev/null || true
-echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} epic=${EPIC:-all}" >> /tmp/claude-sessions.txt
+if [[ -n "$EPIC" ]]; then
+  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} epic=#${EPIC} \"${ISSUE_TITLE}\"" >> /tmp/claude-sessions.txt
+else
+  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} scope=all" >> /tmp/claude-sessions.txt
+fi
 chmod 600 /tmp/claude-sessions.txt 2>/dev/null || true
 
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
@@ -172,7 +370,8 @@ echo -e "${BLUE}Max Crashes:${NC}  ${MAX_CRASHES}"
 if [[ "$NEW_MODE" == "true" ]]; then
   echo -e "${BLUE}Mode:${NC}         ${CYAN}Interactive (waiting for instructions)${NC}"
 elif [[ -n "$EPIC" ]]; then
-  echo -e "${BLUE}Focus Epic:${NC}   #${EPIC}"
+  echo -e "${BLUE}Focus Epic:${NC}   #${EPIC} - ${ISSUE_TITLE}"
+  echo -e "${BLUE}Epic URL:${NC}     ${CYAN}${ISSUE_URL}${NC}"
 else
   echo -e "${BLUE}Scope:${NC}        All open issues and epics"
 fi
@@ -180,11 +379,26 @@ echo ""
 
 # Fetch and create worktree
 echo -e "${YELLOW}Creating isolated worktree from origin/${DEFAULT_BRANCH}...${NC}"
-git fetch origin "${DEFAULT_BRANCH}"
-git worktree add "${WORKTREE_DIR}" "origin/${DEFAULT_BRANCH}"
+if ! git fetch origin "${DEFAULT_BRANCH}" 2>&1; then
+  echo -e "${RED}Error: Failed to fetch origin/${DEFAULT_BRANCH}${NC}"
+  echo "Check your network connection and remote configuration."
+  exit 1
+fi
+if ! git worktree add "${WORKTREE_DIR}" "origin/${DEFAULT_BRANCH}" 2>&1; then
+  echo -e "${RED}Error: Failed to create worktree${NC}"
+  echo "Try: git worktree prune && git worktree list"
+  exit 1
+fi
+echo -e "${GREEN}Worktree created successfully${NC}"
+echo ""
 
-# Cleanup function
+# Cleanup function (with guard against double-execution from nested traps)
+CLEANUP_DONE=false
 cleanup() {
+  if [[ "$CLEANUP_DONE" == "true" ]]; then
+    return 0
+  fi
+  CLEANUP_DONE=true
   local exit_code=$?
   echo ""
   echo -e "${YELLOW}Cleaning up worktree ${WORKTREE_DIR}...${NC}"
@@ -197,7 +411,8 @@ cleanup() {
 
 # Handle signals gracefully
 trap cleanup EXIT
-trap 'echo -e "\n${YELLOW}Interrupted - cleaning up...${NC}"; cleanup' INT TERM
+trap 'echo -e "\n${YELLOW}Received interrupt (Ctrl+C) - shutting down gracefully...${NC}"; exit 130' INT
+trap 'echo -e "\n${YELLOW}Received termination signal - shutting down...${NC}"; exit 143' TERM
 
 # Change to worktree
 cd "${WORKTREE_DIR}"
@@ -264,14 +479,14 @@ echo ""
 
 # Run Claude with crash recovery loop
 while true; do
+  # Capture exit code without triggering set -e
+  EXIT_CODE=0
   if [[ "$FIRST_RUN" == "true" ]]; then
     FIRST_RUN=false
-    claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}"
+    claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || EXIT_CODE=$?
   else
-    claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG"
+    claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" || EXIT_CODE=$?
   fi
-
-  EXIT_CODE=$?
 
   # Exit code 0 means successful completion (user quit or work finished)
   if [[ $EXIT_CODE -eq 0 ]]; then
@@ -282,7 +497,7 @@ while true; do
   # Any non-zero exit (crash, OOM, killed) triggers recovery
   NOW=$(date +%s)
   CRASH_TIMES+=("$NOW")
-  ((TOTAL_CRASHES++))
+  TOTAL_CRASHES=$((TOTAL_CRASHES + 1))
 
   echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
 
@@ -298,7 +513,7 @@ while true; do
   RECENT_CRASHES=0
   for T in "${CRASH_TIMES[@]}"; do
     if (( NOW - T < CRASH_WINDOW )); then
-      ((RECENT_CRASHES++))
+      RECENT_CRASHES=$((RECENT_CRASHES + 1))
     fi
   done
 

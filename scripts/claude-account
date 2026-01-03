@@ -44,9 +44,10 @@ NC='\033[0m'
 
 # Files
 CLAUDE_CONFIG="${HOME}/.claude.json"
+CLAUDE_CREDENTIALS="${HOME}/.claude/.credentials.json"
 ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
 
-# Keychain service name
+# Keychain service name (macOS)
 KEYCHAIN_SERVICE="Claude Code-credentials"
 
 # Temp file tracking for cleanup
@@ -84,6 +85,8 @@ check_deps() {
 detect_credential_storage() {
   if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "keychain"
+  elif [[ -f "$CLAUDE_CREDENTIALS" ]]; then
+    echo "file"
   elif command -v secret-tool &>/dev/null; then
     echo "secret-tool"
   else
@@ -136,26 +139,49 @@ get_current_email() {
   fi
 }
 
-# Get credentials from keychain (macOS)
-get_keychain_credentials() {
-  if [[ "$OSTYPE" != "darwin"* ]]; then
-    echo ""
-    return
-  fi
-  security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w 2>/dev/null || echo ""
+# Get credentials from storage (macOS Keychain or Linux file)
+get_credentials() {
+  local storage_type
+  storage_type=$(detect_credential_storage)
+
+  case "$storage_type" in
+    keychain)
+      security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w 2>/dev/null || echo ""
+      ;;
+    file)
+      cat "$CLAUDE_CREDENTIALS" 2>/dev/null || echo ""
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
 }
 
-# Set credentials in keychain (macOS)
-set_keychain_credentials() {
+# Set credentials in storage (macOS Keychain or Linux file)
+set_credentials() {
   local creds="$1"
-  if [[ "$OSTYPE" != "darwin"* ]]; then
-    echo -e "${RED}Error: Keychain operations only supported on macOS${NC}"
-    return 1
-  fi
-  # Delete existing entry first (ignore errors if doesn't exist)
-  security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" 2>/dev/null || true
-  # Add new entry
-  security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w "$creds"
+  local storage_type
+  storage_type=$(detect_credential_storage)
+
+  case "$storage_type" in
+    keychain)
+      # Delete existing entry first (ignore errors if doesn't exist)
+      security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" 2>/dev/null || true
+      # Add new entry
+      security add-generic-password -s "$KEYCHAIN_SERVICE" -a "$USER" -w "$creds"
+      ;;
+    file)
+      # Ensure directory exists
+      mkdir -p "$(dirname "$CLAUDE_CREDENTIALS")"
+      # Write credentials with secure permissions
+      echo "$creds" > "$CLAUDE_CREDENTIALS"
+      chmod 600 "$CLAUDE_CREDENTIALS"
+      ;;
+    *)
+      echo -e "${RED}Error: No credential storage available${NC}"
+      return 1
+      ;;
+  esac
 }
 
 # Get accounts list from environment
@@ -344,17 +370,17 @@ capture_account() {
     exit 1
   fi
 
-  # Get credentials from keychain
+  # Get credentials from storage (keychain on macOS, file on Linux)
   local credentials=""
-  if [[ "$cred_storage" == "keychain" ]]; then
-    credentials=$(get_keychain_credentials)
+  if [[ "$cred_storage" == "keychain" || "$cred_storage" == "file" ]]; then
+    credentials=$(get_credentials)
     if [[ -z "$credentials" ]]; then
-      echo -e "${RED}Error: Could not read credentials from keychain${NC}"
+      echo -e "${RED}Error: Could not read credentials from ${cred_storage}${NC}"
       echo "Make sure you're logged in to Claude Code."
       exit 1
     fi
   else
-    echo -e "${YELLOW}Warning: Credential storage not available (keychain/secret-tool)${NC}"
+    echo -e "${YELLOW}Warning: Credential storage not available${NC}"
     echo "Saving account metadata only - tokens will not be saved."
   fi
 
@@ -587,9 +613,11 @@ switch_account() {
       rateLimitTier: $rateLimitTier
     }}')
 
-  if [[ "$(detect_credential_storage)" == "keychain" ]]; then
-    set_keychain_credentials "$new_credentials"
-    echo -e "${GREEN}Updated keychain credentials${NC}"
+  local cred_storage
+  cred_storage=$(detect_credential_storage)
+  if [[ "$cred_storage" == "keychain" || "$cred_storage" == "file" ]]; then
+    set_credentials "$new_credentials"
+    echo -e "${GREEN}Updated credentials (${cred_storage})${NC}"
   fi
 
   echo -e "${GREEN}Switched account:${NC}"

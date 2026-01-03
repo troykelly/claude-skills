@@ -61,6 +61,14 @@ sanitize_email() {
   echo "$email" | sed 's/[^a-zA-Z0-9]/_/g' | tr '[:lower:]' '[:upper:]'
 }
 
+# Check if email is in comma-separated list (literal match, no regex)
+email_in_list() {
+  local email="$1"
+  local list="$2"
+  # Use delimiter matching to avoid partial matches
+  [[ ",${list}," == *",${email},"* ]]
+}
+
 # Get current account from ~/.claude.json
 get_current_account() {
   if [[ ! -f "$CLAUDE_CONFIG" ]]; then
@@ -101,24 +109,6 @@ get_accounts_list_from_file() {
   grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
 }
 
-# Get account data from .env file by email (for write operations)
-get_account_data_from_file() {
-  local email="$1"
-  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")"
-
-  if [[ ! -f "$ENV_FILE" ]]; then
-    echo ""
-    return
-  fi
-
-  local line
-  line=$(grep "^${var_name}=" "$ENV_FILE" 2>/dev/null || echo "")
-  if [[ -n "$line" ]]; then
-    # Extract JSON value (handle both single and double quotes)
-    echo "$line" | sed "s/^${var_name}=//" | tr -d "'" | tr -d '"'
-  fi
-}
-
 # Update or add line in .env
 update_env_line() {
   local key="$1"
@@ -140,8 +130,11 @@ update_env_line() {
     echo "" >> "$ENV_FILE"
   fi
 
+  # Escape single quotes in value (replace ' with '\'' for safe shell quoting)
+  local escaped_value="${value//\'/\'\\\'\'}"
+
   # Add new line
-  echo "${key}='${value}'" >> "$ENV_FILE"
+  echo "${key}='${escaped_value}'" >> "$ENV_FILE"
 }
 
 # Remove line from .env
@@ -200,7 +193,7 @@ list_accounts() {
     echo -e "      ${BLUE}Name:${NC} ${display_name}"
     echo -e "      ${BLUE}Org:${NC}  ${org_name}"
     echo ""
-    ((count++))
+    count=$((count + 1))
   done
 
   echo -e "${BLUE}Total:${NC} ${count} account(s)"
@@ -265,7 +258,7 @@ EOF
 
   if [[ "$is_first_account" == "true" ]]; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "$current_email"
-  elif [[ ! "$accounts_list" =~ (^|,)${current_email}(,|$) ]]; then
+  elif ! email_in_list "$current_email" "$accounts_list"; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "${accounts_list},${current_email}"
   fi
   # If already in list, don't need to update list (just updated data above)
@@ -304,7 +297,7 @@ show_current() {
   # Check if saved in .env
   local accounts_list
   accounts_list=$(get_accounts_list)
-  if [[ "$accounts_list" =~ (^|,)${current_email}(,|$) ]]; then
+  if email_in_list "$current_email" "$accounts_list"; then
     echo -e "  ${GREEN}Status:${NC}  Saved in .env"
   else
     echo -e "  ${YELLOW}Status:${NC}  Not saved (use 'claude-account capture')"
@@ -345,7 +338,7 @@ switch_account() {
 
   if [[ -n "$target_email" ]]; then
     # Switch to specific account
-    if [[ ! "$accounts_list" =~ (^|,)${target_email}(,|$) ]]; then
+    if ! email_in_list "$target_email" "$accounts_list"; then
       echo -e "${RED}Error: Account not found: ${target_email}${NC}"
       echo ""
       echo "Available accounts:"
@@ -428,8 +421,8 @@ remove_account() {
     exit 1
   fi
 
-  if [[ ! "$accounts_list" =~ (^|,)${target_email}(,|$) ]]; then
-    echo -e "${RED}Error: Account not found: ${target_email}${NC}"
+  if ! email_in_list "$target_email" "$accounts_list"; then
+    echo -e "${RED}Error: Account not found in ${ENV_FILE}: ${target_email}${NC}"
     exit 1
   fi
 

@@ -525,6 +525,14 @@ main() {
     install_pkg "curl" "curl" "curl" "curl" "curl" "curl"
     install_pkg "jq" "jq" "jq" "jq" "jq" "jq"
 
+    # xxd (hex dump utility, used by claude-account for newline detection)
+    # On Debian/Ubuntu it's standalone, on others it's part of vim
+    case "$PKG_MGR" in
+      apt) install_pkg "xxd" "xxd" "" "" "" "" ;;
+      brew) command -v xxd &>/dev/null || install_pkg "xxd" "" "" "vim" "" "" ;;
+      *) command -v xxd &>/dev/null || install_pkg "xxd" "" "vim-common" "" "vim" "vim" ;;
+    esac
+
     # UUID generator
     case "$PKG_MGR" in
       apt) install_pkg "uuidgen" "uuid-runtime" "" "" "" "" || true ;;

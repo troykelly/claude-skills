@@ -315,7 +315,7 @@ validate_files() {
 
   for file in "$@"; do
     if ! validate_file "$file"; then
-      ((failures++))
+      failures=$((failures + 1))
     fi
   done
 

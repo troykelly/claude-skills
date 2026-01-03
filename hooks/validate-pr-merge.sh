@@ -27,8 +27,8 @@ if ! echo "$COMMAND" | grep -q "gh pr merge"; then
   exit 0
 fi
 
-# Extract PR number
-PR_NUM=$(echo "$COMMAND" | grep -oP 'gh pr merge\s+\K\d+' | head -1 || true)
+# Extract PR number (using sed for macOS compatibility)
+PR_NUM=$(echo "$COMMAND" | sed -n 's/.*gh pr merge[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
 
 if [ -z "$PR_NUM" ]; then
   exit 0  # Can't determine PR, allow and let gh handle it

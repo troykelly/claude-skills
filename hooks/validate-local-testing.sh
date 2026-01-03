@@ -80,13 +80,13 @@ if [ "$REQUIRES_REDIS" = "true" ]; then
   fi
 fi
 
-# Extract issue number from command
-ISSUE=$(echo "$COMMAND" | grep -oP '(?:Closes |Fixes |Resolves )#\K\d+' | head -1 || true)
+# Extract issue number from command (using sed for macOS compatibility)
+ISSUE=$(echo "$COMMAND" | sed -n 's/.*\(Closes\|Fixes\|Resolves\) #\([0-9][0-9]*\).*/\2/p' | head -1)
 
 if [ -z "$ISSUE" ]; then
   # Try to find issue from current branch name
   BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-  ISSUE=$(echo "$BRANCH" | grep -oP '(?:feature/|fix/|bugfix/|issue-)\K\d+' | head -1 || true)
+  ISSUE=$(echo "$BRANCH" | sed -n 's/.*\(feature\|fix\|bugfix\|issue-\)\([0-9][0-9]*\).*/\2/p' | head -1)
 fi
 
 if [ -z "$ISSUE" ]; then

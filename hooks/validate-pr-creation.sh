@@ -29,12 +29,13 @@ if ! echo "$COMMAND" | grep -q "gh pr create"; then
 fi
 
 # Extract issue number from command (looks for Closes #NNN, Fixes #NNN, etc.)
-ISSUE=$(echo "$COMMAND" | grep -oP '(?:Closes |Fixes |Resolves )#\K\d+' | head -1 || true)
+# Using sed instead of grep -P for macOS compatibility
+ISSUE=$(echo "$COMMAND" | sed -n 's/.*\(Closes\|Fixes\|Resolves\) #\([0-9][0-9]*\).*/\2/p' | head -1)
 
 if [ -z "$ISSUE" ]; then
   # Try to find issue from current branch name
   BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-  ISSUE=$(echo "$BRANCH" | grep -oP '(?:feature/|fix/|bugfix/)?\K\d+' | head -1 || true)
+  ISSUE=$(echo "$BRANCH" | sed -n 's/.*\(feature\|fix\|bugfix\)\/\([0-9][0-9]*\).*/\2/p; s/^\([0-9][0-9]*\).*/\1/p' | head -1)
 fi
 
 if [ -z "$ISSUE" ]; then
@@ -96,8 +97,9 @@ EOF
   exit 2
 fi
 
-# Check unaddressed count
-UNADDRESSED=$(echo "$REVIEW_BODY" | grep -oP 'Unaddressed[:\s|]+\K\d+' | head -1 || echo "0")
+# Check unaddressed count (using sed for macOS compatibility)
+UNADDRESSED=$(echo "$REVIEW_BODY" | sed -n 's/.*Unaddressed[: |]*\([0-9][0-9]*\).*/\1/p' | head -1)
+UNADDRESSED="${UNADDRESSED:-0}"
 
 if [ "$UNADDRESSED" != "0" ] && [ -n "$UNADDRESSED" ]; then
   log_hook_event "PreToolUse" "validate-pr-creation" "blocked" \

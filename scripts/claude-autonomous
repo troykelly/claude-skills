@@ -88,13 +88,26 @@ while [[ $# -gt 0 ]]; do
       echo ""
       if [[ -f "$SESSION_LOG" ]]; then
         # Format: timestamp session_id repo_name worktree_path details
-        echo -e "  ${BLUE}SESSION ID                            REPO           DETAILS${NC}"
-        echo -e "  ─────────────────────────────────────────────────────────────────────────"
+        echo -e "  ${BLUE}SESSION ID                            REPO           STATUS      DETAILS${NC}"
+        echo -e "  ─────────────────────────────────────────────────────────────────────────────────────"
         tail -20 "$SESSION_LOG" | tac | while read -r line; do
           sid=$(echo "$line" | awk '{print $2}')
           repo=$(echo "$line" | awk '{print $3}')
+          worktree=$(echo "$line" | awk '{print $4}')
           details=$(echo "$line" | cut -d' ' -f5-)
-          printf "  %-37s %-14s %s\n" "$sid" "$repo" "$details"
+
+          # Check if Claude session file exists
+          # Worktree path like /tmp/claude-worktrees/repo/uuid -> encoded as -tmp-claude-worktrees-repo-uuid
+          encoded_path=$(echo "$worktree" | sed 's|/|-|g')
+          session_file="${HOME}/.claude/projects/${encoded_path}/${sid}.jsonl"
+
+          if [[ -f "$session_file" ]]; then
+            status="${GREEN}resumable${NC}"
+          else
+            status="${RED}no session${NC}"
+          fi
+
+          printf "  %-37s %-14s ${status}  %s\n" "$sid" "$repo" "$details"
         done
       else
         echo "  No sessions recorded yet."
@@ -105,6 +118,9 @@ while [[ $# -gt 0 ]]; do
       echo -e "  Most recent session:  ${CYAN}claude-autonomous --continue${NC}"
       echo -e "  Session picker:       ${CYAN}claude-autonomous --resume${NC}"
       echo -e "  Specific session:     ${CYAN}claude-autonomous --resume <session-id>${NC}"
+      echo ""
+      echo -e "${YELLOW}Note:${NC} Sessions marked '${RED}no session${NC}' have no Claude conversation file"
+      echo "      and cannot be resumed (worktree may have been cleaned up before crash)."
       exit 0
       ;;
     -r|--repo)
@@ -176,6 +192,26 @@ if [[ "$CONTINUE_MODE" == "true" ]]; then
   echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
   echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
   echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+  echo ""
+
+  # Check if Claude session file exists before attempting resume
+  encoded_path=$(echo "$SESSION_WORKTREE" | sed 's|/|-|g')
+  session_file="${HOME}/.claude/projects/${encoded_path}/${SESSION_ID}.jsonl"
+
+  if [[ ! -f "$session_file" ]]; then
+    echo -e "${RED}Error: No Claude session file found${NC}"
+    echo ""
+    echo -e "Expected: ${session_file}"
+    echo ""
+    echo "This session cannot be resumed. The conversation was either:"
+    echo "  - Never saved (Claude crashed before saving)"
+    echo "  - Manually deleted"
+    echo "  - Created in a different environment"
+    echo ""
+    echo "Use 'claude-autonomous --list' to see resumable sessions."
+    exit 1
+  fi
+  echo -e "${GREEN}Session file found${NC}"
   echo ""
 
   # Check if worktree exists, recreate if not
@@ -288,6 +324,24 @@ if [[ -n "$RESUME_SESSION" ]]; then
       echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
       echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
       echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+      echo ""
+
+      # Check if Claude session file exists before attempting resume
+      encoded_path=$(echo "$SESSION_WORKTREE" | sed 's|/|-|g')
+      session_file="${HOME}/.claude/projects/${encoded_path}/${RESUME_SESSION}.jsonl"
+
+      if [[ ! -f "$session_file" ]]; then
+        echo -e "${RED}Error: No Claude session file found${NC}"
+        echo ""
+        echo -e "Expected: ${session_file}"
+        echo ""
+        echo "This session cannot be resumed. The conversation was either:"
+        echo "  - Never saved (Claude crashed before saving)"
+        echo "  - Manually deleted"
+        echo "  - Created in a different environment"
+        exit 1
+      fi
+      echo -e "${GREEN}Session file found${NC}"
       echo ""
 
       # Check if worktree exists, recreate if not

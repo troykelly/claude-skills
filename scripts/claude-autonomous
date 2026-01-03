@@ -13,6 +13,7 @@
 # Environment Variables:
 #   WORK_EPIC            Same as --epic
 #   CLAUDE_MODEL         Model to use (default: claude-sonnet-4-20250514)
+#   GITHUB_TOKEN         GitHub token for MCP servers (auto-fetched from gh if not set)
 #
 # Examples:
 #   claude-autonomous                    # Work on all issues
@@ -94,6 +95,21 @@ if ! gh auth status &>/dev/null; then
   exit 1
 fi
 
+# Ensure GITHUB_TOKEN is set for MCP servers
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo -e "${YELLOW}GITHUB_TOKEN not set, fetching from gh CLI...${NC}"
+  if GH_TOKEN=$(gh auth token 2>/dev/null); then
+    export GITHUB_TOKEN="$GH_TOKEN"
+    echo -e "${GREEN}GITHUB_TOKEN set from gh auth token${NC}"
+  else
+    echo -e "${RED}Error: Could not fetch GitHub token from gh CLI${NC}"
+    echo "Ensure gh is authenticated with: gh auth login"
+    exit 1
+  fi
+else
+  echo -e "${GREEN}GITHUB_TOKEN already set${NC}"
+fi
+
 # Generate session ID
 SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -108,13 +124,14 @@ echo -e "${CYAN}╔════════════════════�
 echo -e "${CYAN}║${NC}          ${GREEN}Claude Autonomous Issue-Driven Development${NC}          ${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${BLUE}Session ID:${NC}  ${SESSION_ID}"
-echo -e "${BLUE}Repository:${NC}  ${REPO_NAME}"
-echo -e "${BLUE}Worktree:${NC}    ${WORKTREE_DIR}"
+echo -e "${BLUE}Session ID:${NC}   ${SESSION_ID}"
+echo -e "${BLUE}Repository:${NC}   ${REPO_NAME}"
+echo -e "${BLUE}Worktree:${NC}     ${WORKTREE_DIR}"
+echo -e "${BLUE}GitHub Token:${NC} ${GREEN}✓ Set${NC}"
 if [[ -n "$EPIC" ]]; then
-  echo -e "${BLUE}Focus Epic:${NC}  #${EPIC}"
+  echo -e "${BLUE}Focus Epic:${NC}   #${EPIC}"
 else
-  echo -e "${BLUE}Scope:${NC}       All open issues and epics"
+  echo -e "${BLUE}Scope:${NC}        All open issues and epics"
 fi
 echo ""
 

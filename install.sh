@@ -383,38 +383,98 @@ install_script() {
   fi
 }
 
-# Install Claude Code plugin
+# Install Claude Code plugin via settings.json (works non-interactively)
 install_plugin() {
-  if ! has_cmd claude; then
-    log_warn "Claude Code CLI not installed, skipping plugin installation"
-    return 1
+  local settings_dir="$HOME/.claude"
+  local settings_file="$settings_dir/settings.json"
+
+  log_info "Configuring issue-driven-development plugin..."
+
+  # Create settings directory if needed
+  mkdir -p "$settings_dir"
+
+  # Build the plugin configuration
+  local plugin_config
+  plugin_config=$(cat <<'PLUGIN_JSON'
+{
+  "extraKnownMarketplaces": {
+    "troykelly-skills": {
+      "source": {
+        "source": "github",
+        "repo": "troykelly/claude-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "issue-driven-development@troykelly-skills": true
+  }
+}
+PLUGIN_JSON
+)
+
+  if [[ -f "$settings_file" ]]; then
+    # Verify jq is available (should be - we install it)
+    if ! has_cmd jq; then
+      log_warn "jq not available for settings merge"
+      log_info "Add plugin manually: claude /plugin install issue-driven-development@troykelly-skills"
+      return 1
+    fi
+
+    # Check if existing file is valid JSON
+    if ! jq empty "$settings_file" 2>/dev/null; then
+      log_warn "Existing settings.json is not valid JSON - backing up and creating new"
+      cp "$settings_file" "${settings_file}.bak.$(date +%s)"
+      echo "$plugin_config" > "$settings_file"
+      log_success "Created new settings.json (backup saved)"
+      return 0
+    fi
+
+    # Check if plugin is already configured (idempotent check)
+    local already_configured
+    already_configured=$(jq -r '.enabledPlugins["issue-driven-development@troykelly-skills"] // false' "$settings_file" 2>/dev/null)
+    if [[ "$already_configured" == "true" ]]; then
+      log_success "Plugin already configured in settings.json"
+      return 0
+    fi
+
+    # Merge with existing settings using jq
+    local existing
+    existing=$(cat "$settings_file")
+
+    # Deep merge: existing settings + new plugin config (idempotent - same keys overwrite)
+    local merged
+    merged=$(echo "$existing" "$plugin_config" | jq -s '
+      def deepmerge:
+        reduce .[] as $item ({}; . * $item);
+      deepmerge
+    ' 2>/dev/null)
+
+    if [[ -n "$merged" && "$merged" != "null" ]]; then
+      echo "$merged" > "$settings_file"
+      log_success "Plugin configuration merged into existing settings.json"
+    else
+      log_warn "Could not merge settings - adding plugin config manually"
+      # Fallback: try to add just the essential fields
+      local updated
+      updated=$(echo "$existing" | jq --argjson pc "$plugin_config" '
+        .extraKnownMarketplaces = (.extraKnownMarketplaces // {}) * $pc.extraKnownMarketplaces |
+        .enabledPlugins = (.enabledPlugins // {}) * $pc.enabledPlugins
+      ' 2>/dev/null)
+      if [[ -n "$updated" && "$updated" != "null" ]]; then
+        echo "$updated" > "$settings_file"
+        log_success "Plugin configuration added to settings.json"
+      else
+        log_error "Failed to update settings.json - manual configuration required"
+        return 1
+      fi
+    fi
+  else
+    # No existing settings - create new file
+    echo "$plugin_config" > "$settings_file"
+    log_success "Created settings.json with plugin configuration"
   fi
 
-  # Claude plugin commands require interactive TTY (Ink library)
-  # When running via curl|bash, stdin is not a TTY
-  if [[ ! -t 0 ]]; then
-    log_warn "Non-interactive mode detected - plugin installation requires TTY"
-    log_info "Run these commands manually after installation:"
-    echo ""
-    echo -e "  ${CYAN}claude /plugin marketplace add troykelly/claude-skills${NC}"
-    echo -e "  ${CYAN}claude /plugin install issue-driven-development@troykelly-skills${NC}"
-    echo ""
-    return 0
-  fi
-
-  log_info "Installing issue-driven-development plugin..."
-
-  # Add marketplace
-  if ! claude /plugin marketplace add troykelly/claude-skills 2>/dev/null; then
-    log_warn "Could not add marketplace - you may need to add it manually"
-  fi
-
-  # Install plugin
-  if ! claude /plugin install issue-driven-development@troykelly-skills 2>/dev/null; then
-    log_warn "Could not install plugin - you may need to install it manually"
-  fi
-
-  log_success "Plugin installation attempted (verify with: claude /plugin list)"
+  log_success "Plugin configured (verify with: claude /plugin list)"
 }
 
 # Main installation
@@ -490,21 +550,18 @@ main() {
   echo "  1. Authenticate GitHub CLI (if not already done):"
   echo -e "     ${CYAN}gh auth login${NC}"
   echo ""
-  echo "  2. Install the Claude Code plugin (if not done above):"
-  echo -e "     ${CYAN}claude /plugin marketplace add troykelly/claude-skills${NC}"
-  echo -e "     ${CYAN}claude /plugin install issue-driven-development@troykelly-skills${NC}"
-  echo ""
-  echo "  3. Set required environment variables:"
+  echo "  2. Set required environment variables:"
   echo -e "     ${CYAN}export GITHUB_PROJECT=\"https://github.com/users/YOU/projects/N\"${NC}"
   echo -e "     ${CYAN}export GITHUB_PROJECT_NUM=N${NC}"
   echo -e "     ${CYAN}export GH_PROJECT_OWNER=\"@me\"${NC}"
   echo ""
-  echo "  4. Run autonomous mode from any git repository:"
+  echo "  3. Run autonomous mode from any git repository:"
   echo -e "     ${CYAN}claude-autonomous${NC}"
   echo ""
-  echo "  5. Or focus on a specific epic:"
+  echo "  4. Or focus on a specific epic:"
   echo -e "     ${CYAN}claude-autonomous --epic 42${NC}"
   echo ""
+  echo -e "Verify plugin: ${CYAN}claude /plugin list${NC}"
   echo -e "Documentation: ${BLUE}${REPO_URL}${NC}"
   echo ""
 }

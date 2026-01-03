@@ -346,7 +346,7 @@ If blocked, return to Step 9 or Step 10.
 
 ---
 
-### Step 13: CI Monitoring
+### Step 13: CI Monitoring → Merge → Continue
 
 **Actions:**
 - Wait for CI to run
@@ -354,7 +354,27 @@ If blocked, return to Step 9 or Step 10.
 - Repeat until green or truly unresolvable
 - If unresolvable → Document in issue, mark as blocked
 
-**Skills:** `ci-monitoring`, `verification-before-merge`
+**When CI is green (MANDATORY):**
+1. **Merge the PR immediately**: `gh pr merge [PR_NUMBER] --squash --delete-branch`
+2. **Update project board Status to Done** (verify it updated)
+3. **Continue to next issue** (in autonomous mode, do NOT stop and report)
+
+```bash
+# When CI passes
+gh pr merge [PR_NUMBER] --squash --delete-branch
+
+# Update project status to Done
+# ... project board update commands ...
+
+# Continue to next issue (do not stop)
+```
+
+**Do NOT:**
+- Report "CI is green, ready for review/merge" and wait
+- Summarize completed work and ask what to do next
+- Stop after a single issue when more work remains
+
+**Skills:** `ci-monitoring`
 
 ---
 

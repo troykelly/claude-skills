@@ -53,28 +53,54 @@ PR Created
  Green   Red/Failed
    │       │
    ▼       ▼
- DONE   ┌─────────────┐
-        │ Diagnose    │
-        │ failure     │
-        └──────┬──────┘
+┌─────────┐  ┌─────────────┐
+│ MERGE   │  │ Diagnose    │
+│ THE PR  │  │ failure     │
+└────┬────┘  └──────┬──────┘
+     │              │
+     ▼              ▼
+┌─────────┐  ┌─────────────┐
+│ Continue│  │ Fixable?    │
+│ to next │  └──────┬──────┘
+│ issue   │         │
+└─────────┘    ┌────┴────┐
+               │         │
+              Yes        No
+               │         │
+               ▼         ▼
+          ┌─────────┐  ┌─────────────┐
+          │ Fix and │  │ Document as │
+          │ push    │  │ unresolvable│
+          └────┬────┘  └─────────────┘
                │
-               ▼
-        ┌─────────────┐
-        │ Fixable?    │
-        └──────┬──────┘
-               │
-          ┌────┴────┐
-          │         │
-         Yes        No
-          │         │
-          ▼         ▼
-     ┌─────────┐  ┌─────────────┐
-     │ Fix and │  │ Document as │
-     │ push    │  │ unresolvable│
-     └────┬────┘  └─────────────┘
-          │
-          └────► Back to "Wait for CI"
+               └────► Back to "Wait for CI"
 ```
+
+## CRITICAL: Green CI = Merge Immediately
+
+**When CI passes, you MUST merge the PR and continue working.**
+
+Do NOT:
+- Stop and report "CI is green, ready for review"
+- Wait for user confirmation
+- Summarize and ask what to do next
+
+DO:
+- Merge the PR immediately: `gh pr merge [PR_NUMBER] --squash --delete-branch`
+- Mark the linked issue as Done
+- Continue to the next issue in scope
+
+```bash
+# When CI passes
+gh pr merge [PR_NUMBER] --squash --delete-branch
+
+# Update linked issue status
+gh issue edit [ISSUE_NUMBER] --remove-label "status:in-review" --add-label "status:done"
+
+# Continue to next issue (do not stop)
+```
+
+**The only exception:** PRs with `do-not-merge` label require explicit user action.
 
 ## Checking CI Status
 
@@ -327,10 +353,16 @@ For each CI run:
 
 - [ ] Waited for CI to complete
 - [ ] All checks examined
-- [ ] Failures diagnosed
-- [ ] Fixes implemented
-- [ ] Re-pushed and re-checked
-- [ ] All green before proceeding
+- [ ] Failures diagnosed (if any)
+- [ ] Fixes implemented (if needed)
+- [ ] Re-pushed and re-checked (if fixed)
+- [ ] All green
+
+When CI is green:
+
+- [ ] **PR merged immediately** (`gh pr merge --squash --delete-branch`)
+- [ ] Linked issue marked Done
+- [ ] **Continued to next issue** (do NOT stop and report)
 
 For unresolvable issues:
 
@@ -344,12 +376,13 @@ For unresolvable issues:
 
 This skill is called by:
 - `issue-driven-development` - Step 13
+- `autonomous-orchestration` - Main loop and bootstrap
 
 This skill follows:
 - `pr-creation` - PR exists
 
-This skill precedes:
-- `verification-before-merge` - Final checks
+This skill completes:
+- The PR lifecycle - merge is the final step, not "verification-before-merge"
 
 This skill may trigger:
 - `error-recovery` - If CI reveals deeper issues

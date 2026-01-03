@@ -343,9 +343,39 @@ PRs are excluded from bootstrap resolution if:
 
 1. **Check Deviation Resolution** - Resume issues whose children are all closed
 2. **Check CI/PRs** - Monitor for merge readiness, verify review artifacts
-3. **Spawn Workers** - Up to 5 parallel workers from Ready queue
-4. **Evaluate State** - Determine next action (continue, sleep, complete)
-5. **Brief Pause** - 30 second interval between iterations
+3. **MERGE GREEN PRs** - Any PR with passing CI is merged IMMEDIATELY
+4. **Spawn Workers** - Up to 5 parallel workers from Ready queue
+5. **Evaluate State** - Determine next action (continue, sleep, complete)
+6. **Brief Pause** - 30 second interval between iterations
+
+### CRITICAL: Merge Green PRs Immediately
+
+**Every loop iteration must check for and merge passing PRs:**
+
+```bash
+# In each loop iteration
+for pr in $(gh pr list --json number,statusCheckRollup --jq '.[] | select(.statusCheckRollup | all(.conclusion == "SUCCESS")) | .number'); do
+  # Check for do-not-merge label
+  if ! gh pr view "$pr" --json labels --jq '.labels[].name' | grep -q "do-not-merge"; then
+    echo "Merging PR #$pr (CI passed)"
+    gh pr merge "$pr" --squash --delete-branch
+
+    # Get linked issue and mark done
+    ISSUE=$(gh pr view "$pr" --json body --jq '.body' | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ -n "$ISSUE" ]; then
+      # Update project board status to Done
+      mark_issue_done "$ISSUE"
+    fi
+  fi
+done
+```
+
+**Do NOT:**
+- Report "PRs are ready for merge" and stop
+- Wait for user to request merge
+- Summarize completed work and ask for next steps
+
+**The loop continues until scope is complete. Green PR = immediate merge.**
 
 ## Scope Types
 

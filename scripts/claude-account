@@ -24,7 +24,6 @@
 #   CLAUDE_ACCOUNT_<EMAIL>_ACCOUNTUUID=...
 #   CLAUDE_ACCOUNT_<EMAIL>_ORGANIZATIONUUID=...
 #   CLAUDE_ACCOUNT_<EMAIL>_DISPLAYNAME=...
-#   CLAUDE_ACCOUNTS_LIST=email1,email2,email3
 #
 # Config: ~/.claude.json (account metadata)
 # Credentials: macOS Keychain / Linux ~/.claude/.credentials.json
@@ -181,18 +180,39 @@ set_credentials() {
   esac
 }
 
-# Get accounts list from environment
+# Get accounts list from environment (derived from CLAUDE_ACCOUNT_*_EMAILADDRESS variables)
 get_accounts_list() {
-  echo "${CLAUDE_ACCOUNTS_LIST:-}"
+  local emails=""
+  local var value
+  # Find all CLAUDE_ACCOUNT_*_EMAILADDRESS variables
+  while IFS='=' read -r var value; do
+    if [[ "$var" =~ ^CLAUDE_ACCOUNT_.*_EMAILADDRESS$ ]]; then
+      value="${value//\"/}"  # Remove quotes
+      if [[ -n "$value" ]]; then
+        [[ -n "$emails" ]] && emails="${emails},"
+        emails="${emails}${value}"
+      fi
+    fi
+  done < <(env)
+  echo "$emails"
 }
 
-# Get accounts list from .env file (for write operations)
+# Get accounts list from .env file (derived from CLAUDE_ACCOUNT_*_EMAILADDRESS lines)
 get_accounts_list_from_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
     echo ""
     return
   fi
-  grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
+  local emails=""
+  local value
+  while IFS='=' read -r _ value; do
+    value="${value//\"/}"  # Remove quotes
+    if [[ -n "$value" ]]; then
+      [[ -n "$emails" ]] && emails="${emails},"
+      emails="${emails}${value}"
+    fi
+  done < <(grep "^CLAUDE_ACCOUNT_.*_EMAILADDRESS=" "$ENV_FILE" 2>/dev/null)
+  echo "$emails"
 }
 
 # Get account field from environment
@@ -381,18 +401,8 @@ capture_account() {
     echo "Saving account metadata only - tokens will not be saved."
   fi
 
-  # Check if first account
-  local accounts_list
-  accounts_list=$(get_accounts_list_from_file)
-  local is_first_account=false
-  if [[ -z "$accounts_list" ]]; then
-    is_first_account=true
-  fi
-
-  # Add header on first capture
-  if [[ "$is_first_account" == "true" ]]; then
-    write_header
-  fi
+  # Add header if not present (idempotent)
+  write_header
 
   # Build env var prefix
   local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$current_email")"
@@ -423,19 +433,12 @@ capture_account() {
     fi
   fi
 
-  # Update accounts list
-  if [[ "$is_first_account" == "true" ]]; then
-    update_env_line "CLAUDE_ACCOUNTS_LIST" "$current_email"
-  elif ! email_in_list "$current_email" "$accounts_list"; then
-    update_env_line "CLAUDE_ACCOUNTS_LIST" "${accounts_list},${current_email}"
-  fi
-
   echo -e "${GREEN}Captured account:${NC} ${current_email}"
   echo -e "${BLUE}Saved to:${NC} ${ENV_FILE}"
 
   # Show count
+  local accounts_list emails
   accounts_list=$(get_accounts_list_from_file)
-  local emails
   parse_email_list "$accounts_list" emails
   echo -e "${BLUE}Total saved:${NC} ${#emails[@]} account(s)"
   echo ""
@@ -671,33 +674,9 @@ remove_account() {
     fi
   fi
 
-  # Remove all account fields
+  # Remove all account fields (accounts list is derived, no need to update it)
   local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$target_email")"
   remove_env_prefix "${prefix}_"
-
-  # Update accounts list
-  local new_list=""
-  local emails
-  parse_email_list "$accounts_list" emails
-  for email in "${emails[@]}"; do
-    if [[ "$email" != "$target_email" ]]; then
-      if [[ -z "$new_list" ]]; then
-        new_list="$email"
-      else
-        new_list="${new_list},${email}"
-      fi
-    fi
-  done
-
-  if [[ -z "$new_list" ]]; then
-    # Remove the list entirely if no accounts left
-    local temp_file
-    temp_file=$(make_temp)
-    grep -v "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" > "$temp_file" || true
-    mv "$temp_file" "$ENV_FILE"
-  else
-    update_env_line "CLAUDE_ACCOUNTS_LIST" "$new_list"
-  fi
 
   echo -e "${GREEN}Removed account:${NC} ${target_email}"
 }

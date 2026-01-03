@@ -54,10 +54,11 @@ check_deps() {
   fi
 }
 
-# Sanitize email for env var name (replace @ and . with _)
+# Sanitize email for env var name (replace non-alphanumeric with _)
 sanitize_email() {
   local email="$1"
-  echo "$email" | tr '@.' '_' | tr '[:lower:]' '[:upper:]'
+  # Replace any character that's not alphanumeric with underscore
+  echo "$email" | sed 's/[^a-zA-Z0-9]/_/g' | tr '[:lower:]' '[:upper:]'
 }
 
 # Get current account from ~/.claude.json
@@ -78,8 +79,21 @@ get_current_email() {
   fi
 }
 
-# Get accounts list from .env
+# Get accounts list from environment variable
 get_accounts_list() {
+  echo "${CLAUDE_ACCOUNTS_LIST:-}"
+}
+
+# Get account data from environment variable by email
+get_account_data() {
+  local email="$1"
+  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")"
+  # Use indirect variable expansion to get the value
+  echo "${!var_name:-}"
+}
+
+# Get accounts list from .env file (for write operations)
+get_accounts_list_from_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
     echo ""
     return
@@ -87,8 +101,8 @@ get_accounts_list() {
   grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
 }
 
-# Get account data from .env by email
-get_account_data() {
+# Get account data from .env file by email (for write operations)
+get_account_data_from_file() {
   local email="$1"
   local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")"
 
@@ -121,6 +135,11 @@ update_env_line() {
     mv "$temp_file" "$ENV_FILE"
   fi
 
+  # Ensure file ends with newline before appending
+  if [[ -s "$ENV_FILE" ]] && [[ "$(tail -c 1 "$ENV_FILE" | xxd -p)" != "0a" ]]; then
+    echo "" >> "$ENV_FILE"
+  fi
+
   # Add new line
   echo "${key}='${value}'" >> "$ENV_FILE"
 }
@@ -139,29 +158,24 @@ remove_env_line() {
   mv "$temp_file" "$ENV_FILE"
 }
 
-# List all saved accounts
+# List all saved accounts (reads from environment, not file)
 list_accounts() {
-  if [[ ! -f "$ENV_FILE" ]]; then
-    echo -e "${YELLOW}No .env file found at: ${ENV_FILE}${NC}"
-    echo ""
-    echo "Use 'claude-account capture' to save the current account."
-    return
-  fi
-
   local accounts_list
   accounts_list=$(get_accounts_list)
 
   if [[ -z "$accounts_list" ]]; then
-    echo -e "${YELLOW}No accounts saved in .env${NC}"
+    echo -e "${YELLOW}No accounts found in environment${NC}"
     echo ""
-    echo "Use 'claude-account capture' to save the current account."
+    echo "Either:"
+    echo "  1. Run 'claude-account capture' to save the current account"
+    echo "  2. Ensure your .env is loaded (direnv, source .env, etc.)"
     return
   fi
 
   local current_email
   current_email=$(get_current_email)
 
-  echo -e "${CYAN}Saved Claude Accounts (in ${ENV_FILE}):${NC}"
+  echo -e "${CYAN}Saved Claude Accounts (from environment):${NC}"
   echo ""
 
   local count=0
@@ -211,15 +225,45 @@ capture_account() {
     exit 1
   fi
 
+  # Check current file state (for write operations, read from file not env)
+  local accounts_list
+  accounts_list=$(get_accounts_list_from_file)
+  local is_first_account=false
+
+  if [[ -z "$accounts_list" ]]; then
+    is_first_account=true
+  fi
+
+  # Add header comment on first capture
+  if [[ "$is_first_account" == "true" ]]; then
+    # Ensure file ends with newline before adding header
+    if [[ -s "$ENV_FILE" ]] && [[ "$(tail -c 1 "$ENV_FILE" | xxd -p)" != "0a" ]]; then
+      echo "" >> "$ENV_FILE"
+    fi
+    cat >> "$ENV_FILE" << 'EOF'
+
+# Claude Code Account Management
+# --------------------------------
+# These variables store Claude Code OAuth credentials for multi-account switching.
+# Managed by: claude-account (https://github.com/troykelly/claude-skills)
+#
+# Commands:
+#   claude-account list              Show all saved accounts
+#   claude-account switch            Rotate to next account
+#   claude-account switch <email>    Switch to specific account
+#   claude-account current           Show current active account
+#   claude-account capture           Save current account (re-run after login)
+#
+# Tip: Sync this .env to 1Password for persistence across devcontainer rebuilds.
+#
+EOF
+  fi
+
   # Save account data
   local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$current_email")"
   update_env_line "$var_name" "$current_account"
 
-  # Update accounts list
-  local accounts_list
-  accounts_list=$(get_accounts_list)
-
-  if [[ -z "$accounts_list" ]]; then
+  if [[ "$is_first_account" == "true" ]]; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "$current_email"
   elif [[ ! "$accounts_list" =~ (^|,)${current_email}(,|$) ]]; then
     update_env_line "CLAUDE_ACCOUNTS_LIST" "${accounts_list},${current_email}"
@@ -230,7 +274,7 @@ capture_account() {
   echo -e "${BLUE}Saved to:${NC} ${ENV_FILE}"
 
   local count=0
-  accounts_list=$(get_accounts_list)
+  accounts_list=$(get_accounts_list_from_file)
   IFS=',' read -ra emails <<< "$accounts_list"
   count=${#emails[@]}
   echo -e "${BLUE}Total saved:${NC} ${count} account(s)"
@@ -267,7 +311,7 @@ show_current() {
   fi
 }
 
-# Switch to a specific account or rotate
+# Switch account (reads from environment, writes to ~/.claude.json)
 switch_account() {
   local target_email="${1:-}"
 
@@ -275,8 +319,11 @@ switch_account() {
   accounts_list=$(get_accounts_list)
 
   if [[ -z "$accounts_list" ]]; then
-    echo -e "${RED}Error: No accounts saved in .env${NC}"
-    echo "Use 'claude-account capture' first."
+    echo -e "${RED}Error: No accounts found in environment${NC}"
+    echo ""
+    echo "Either:"
+    echo "  1. Run 'claude-account capture' to save accounts"
+    echo "  2. Ensure your .env is loaded (direnv, source .env, etc.)"
     exit 1
   fi
 
@@ -284,12 +331,12 @@ switch_account() {
   local account_count=${#emails[@]}
 
   if [[ $account_count -eq 0 ]]; then
-    echo -e "${RED}Error: No accounts saved.${NC}"
+    echo -e "${RED}Error: No accounts found.${NC}"
     exit 1
   fi
 
   if [[ $account_count -eq 1 ]]; then
-    echo -e "${YELLOW}Only one account saved. Nothing to switch to.${NC}"
+    echo -e "${YELLOW}Only one account in environment. Nothing to switch to.${NC}"
     exit 0
   fi
 
@@ -372,11 +419,12 @@ remove_account() {
     exit 1
   fi
 
+  # For write operations, read from file not env
   local accounts_list
-  accounts_list=$(get_accounts_list)
+  accounts_list=$(get_accounts_list_from_file)
 
   if [[ -z "$accounts_list" ]]; then
-    echo -e "${RED}Error: No accounts saved.${NC}"
+    echo -e "${RED}Error: No accounts saved in ${ENV_FILE}${NC}"
     exit 1
   fi
 

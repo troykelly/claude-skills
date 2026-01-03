@@ -172,14 +172,14 @@ install_gh() {
   fi
 }
 
-# Install Node.js (needed for Claude Code and MCP servers)
+# Install Node.js (optional - used for MCP servers like memory, playwright)
 install_node() {
   if has_cmd node; then
     log_success "Node.js already installed ($(node --version))"
     return 0
   fi
 
-  log_info "Installing Node.js..."
+  log_info "Installing Node.js (optional, for MCP servers)..."
 
   case "$PKG_MGR" in
     apt)
@@ -211,26 +211,29 @@ install_node() {
   fi
 }
 
-# Install Claude Code CLI
+# Install Claude Code CLI via official installer
 install_claude_code() {
   if has_cmd claude; then
-    log_success "Claude Code CLI already installed"
+    log_success "Claude Code CLI already installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
     return 0
   fi
 
-  if ! has_cmd npm; then
-    log_error "npm not found. Please install Node.js first."
-    return 1
-  fi
+  log_info "Installing Claude Code CLI via official installer..."
 
-  log_info "Installing Claude Code CLI..."
-  npm install -g @anthropic-ai/claude-code
+  # Use Anthropic's official install script
+  curl -fsSL https://console.anthropic.com/install.sh | sh
+
+  # Add to PATH for this session if installed to ~/.claude/bin
+  if [[ -d "$HOME/.claude/bin" ]]; then
+    export PATH="$HOME/.claude/bin:$PATH"
+  fi
 
   if has_cmd claude; then
     log_success "Claude Code CLI installed"
   else
-    log_error "Failed to install Claude Code CLI"
-    return 1
+    log_warn "Claude Code CLI installed but not in PATH"
+    log_info "Add to your shell profile: export PATH=\"\$HOME/.claude/bin:\$PATH\""
+    return 0
   fi
 }
 

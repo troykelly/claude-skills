@@ -575,7 +575,7 @@ check_tool() {
 
 check_tool "git" "apt-get install git / brew install git"
 check_tool "gh" "https://cli.github.com/"
-check_tool "claude" "curl -fsSL https://console.anthropic.com/install.sh | sh"
+check_tool "claude" "curl -fsSL https://claude.ai/install.sh | bash"
 check_tool "jq" "apt-get install jq / brew install jq"
 
 # Check git version supports worktrees (added in git 2.5)

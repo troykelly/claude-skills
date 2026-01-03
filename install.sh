@@ -336,7 +336,7 @@ install_claude_code() {
   log_info "Installing Claude Code CLI via official installer..."
 
   # Use Anthropic's official install script
-  curl -fsSL https://console.anthropic.com/install.sh | sh
+  curl -fsSL https://claude.ai/install.sh | bash
 
   # Add to PATH for this session if installed to ~/.claude/bin
   if [[ -d "$HOME/.claude/bin" ]]; then

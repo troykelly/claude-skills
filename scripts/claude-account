@@ -27,7 +27,7 @@
 #   CLAUDE_ACCOUNTS_LIST=email1,email2,email3
 #
 # Config: ~/.claude.json (account metadata)
-# Credentials: macOS Keychain / Linux secret-tool
+# Credentials: macOS Keychain / Linux ~/.claude/.credentials.json
 #
 # Tip: Sync your .env to 1Password for persistence across devcontainer rebuilds
 
@@ -85,12 +85,9 @@ check_deps() {
 detect_credential_storage() {
   if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "keychain"
-  elif [[ -f "$CLAUDE_CREDENTIALS" ]]; then
-    echo "file"
-  elif command -v secret-tool &>/dev/null; then
-    echo "secret-tool"
   else
-    echo "none"
+    # Linux/other: use file-based storage (Claude Code uses ~/.claude/.credentials.json)
+    echo "file"
   fi
 }
 

@@ -257,16 +257,34 @@ CRASH_TIMES=()
 CRASH_WINDOW=60
 CRASH_THRESHOLD=3
 TOTAL_CRASHES=0
+FIRST_RUN=true
 
 echo -e "${GREEN}Starting autonomous operation...${NC}"
 echo ""
 
-# Run Claude with crash recovery
-claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || \
+# Run Claude with crash recovery loop
 while true; do
+  if [[ "$FIRST_RUN" == "true" ]]; then
+    FIRST_RUN=false
+    claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}"
+  else
+    claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG"
+  fi
+
+  EXIT_CODE=$?
+
+  # Exit code 0 means successful completion (user quit or work finished)
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "${GREEN}Session completed successfully${NC}"
+    break
+  fi
+
+  # Any non-zero exit (crash, OOM, killed) triggers recovery
   NOW=$(date +%s)
   CRASH_TIMES+=("$NOW")
   ((TOTAL_CRASHES++))
+
+  echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
 
   # Check max crash limit
   if (( TOTAL_CRASHES >= MAX_CRASHES )); then
@@ -293,6 +311,4 @@ while true; do
     MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."
     sleep 3
   fi
-
-  claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" && break
 done

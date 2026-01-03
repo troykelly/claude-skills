@@ -213,7 +213,26 @@ gh label create "verified" --color "0E8A16" --description "E2E verification pass
 
 For long-running autonomous operation that survives crashes and continues until all issues are complete.
 
-### Quick Start Command
+### One-Line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/troykelly/claude-skills/main/install.sh | bash
+```
+
+This installs:
+- Required dependencies (`git`, `gh`, `jq`, `node`)
+- Claude Code CLI
+- The `claude-autonomous` command
+- The issue-driven-development plugin
+
+After installation, run from any git repository:
+
+```bash
+claude-autonomous              # Work on all issues
+claude-autonomous --epic 42    # Focus on Epic #42
+```
+
+### Manual Quick Start
 
 ```bash
 # Generate session ID, create isolated worktree from origin/main, and start autonomous operation

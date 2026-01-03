@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+#
+# claude-autonomous - Start autonomous issue-driven development with Claude
+#
+# Usage:
+#   claude-autonomous [OPTIONS]
+#
+# Options:
+#   -e, --epic <N>       Focus on specific epic number
+#   -r, --repo <path>    Repository path (default: current directory)
+#   -h, --help           Show this help message
+#
+# Environment Variables:
+#   WORK_EPIC            Same as --epic
+#   CLAUDE_MODEL         Model to use (default: claude-sonnet-4-20250514)
+#
+# Examples:
+#   claude-autonomous                    # Work on all issues
+#   claude-autonomous --epic 42          # Focus on Epic #42
+#   WORK_EPIC=10 claude-autonomous       # Focus on Epic #10
+#
+# Documentation: https://github.com/troykelly/claude-skills
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Defaults
+REPO_PATH=""
+EPIC=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -e|--epic)
+      EPIC="$2"
+      shift 2
+      ;;
+    -r|--repo)
+      REPO_PATH="$2"
+      shift 2
+      ;;
+    -h|--help)
+      head -30 "$0" | grep -E "^#" | sed 's/^# *//'
+      exit 0
+      ;;
+    *)
+      echo -e "${RED}Unknown option: $1${NC}"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
+  esac
+done
+
+# Use WORK_EPIC env var if --epic not provided
+EPIC="${EPIC:-${WORK_EPIC:-}}"
+
+# Change to repo if specified
+if [[ -n "$REPO_PATH" ]]; then
+  cd "$REPO_PATH"
+fi
+
+# Verify we're in a git repository
+if ! git rev-parse --show-toplevel &>/dev/null; then
+  echo -e "${RED}Error: Not in a git repository${NC}"
+  echo "Run this command from within a git repository, or use --repo <path>"
+  exit 1
+fi
+
+# Check for required tools
+check_tool() {
+  if ! command -v "$1" &>/dev/null; then
+    echo -e "${RED}Error: $1 is required but not installed${NC}"
+    echo "Install with: $2"
+    exit 1
+  fi
+}
+
+check_tool "git" "apt install git / brew install git"
+check_tool "gh" "https://cli.github.com/"
+check_tool "claude" "npm install -g @anthropic-ai/claude-code"
+check_tool "jq" "apt install jq / brew install jq"
+
+# Verify gh is authenticated
+if ! gh auth status &>/dev/null; then
+  echo -e "${RED}Error: GitHub CLI not authenticated${NC}"
+  echo "Run: gh auth login"
+  exit 1
+fi
+
+# Generate session ID
+SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_NAME=$(basename "${REPO_ROOT}")
+WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}"
+
+# Log session
+mkdir -p /tmp/claude-worktrees
+echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} epic=${EPIC:-all}" >> /tmp/claude-sessions.txt
+
+echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}          ${GREEN}Claude Autonomous Issue-Driven Development${NC}          ${CYAN}║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${BLUE}Session ID:${NC}  ${SESSION_ID}"
+echo -e "${BLUE}Repository:${NC}  ${REPO_NAME}"
+echo -e "${BLUE}Worktree:${NC}    ${WORKTREE_DIR}"
+if [[ -n "$EPIC" ]]; then
+  echo -e "${BLUE}Focus Epic:${NC}  #${EPIC}"
+else
+  echo -e "${BLUE}Scope:${NC}       All open issues and epics"
+fi
+echo ""
+
+# Fetch and create worktree
+echo -e "${YELLOW}Creating isolated worktree from origin/main...${NC}"
+git fetch origin main
+git worktree add "${WORKTREE_DIR}" origin/main
+
+# Cleanup function
+cleanup() {
+  echo ""
+  echo -e "${YELLOW}Cleaning up worktree ${WORKTREE_DIR}...${NC}"
+  cd "${REPO_ROOT}" 2>/dev/null || true
+  git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null || true
+  echo -e "${GREEN}Session ${SESSION_ID} ended at $(date -Iseconds)${NC}"
+}
+trap cleanup EXIT
+
+# Change to worktree
+cd "${WORKTREE_DIR}"
+
+# Build epic instruction
+if [[ -n "$EPIC" ]]; then
+  EPIC_INSTRUCTION="Focus exclusively on Epic #${EPIC} and its child issues. Do not work on unrelated issues."
+else
+  EPIC_INSTRUCTION="Work through all open epics and issues in priority order."
+fi
+
+# Build initial prompt
+INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
+
+This worktree was created from origin/main to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
+
+IMPORTANT WORKFLOW NOTES:
+- You have your own isolated copy of the codebase - other agents may be working in parallel
+- Create feature branches for your work and push them to origin
+- Open PRs when work is complete - do not merge directly to main
+- If you need latest changes from main, you can pull origin/main into your worktree
+
+TASK: Use your issue driven development skill to work wholly autonomously until all assigned work is complete.
+
+${EPIC_INSTRUCTION}"
+
+# Crash tracking
+CRASH_TIMES=()
+CRASH_WINDOW=60
+CRASH_THRESHOLD=3
+
+echo -e "${GREEN}Starting autonomous operation...${NC}"
+echo ""
+
+# Run Claude with crash recovery
+claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || \
+while true; do
+  NOW=$(date +%s)
+  CRASH_TIMES+=("$NOW")
+
+  # Count recent crashes
+  RECENT_CRASHES=0
+  for T in "${CRASH_TIMES[@]}"; do
+    if (( NOW - T < CRASH_WINDOW )); then
+      ((RECENT_CRASHES++))
+    fi
+  done
+
+  if (( RECENT_CRASHES >= CRASH_THRESHOLD )); then
+    echo -e "${RED}⚠️  Rapid crash loop detected ($RECENT_CRASHES crashes in ${CRASH_WINDOW}s)${NC}"
+    MSG="CRITICAL: You have crashed $RECENT_CRASHES times in the last ${CRASH_WINDOW} seconds. This indicates a crash loop - something you are repeatedly doing is causing you to crash (likely OOM from large test output, or a runaway process). STOP and think carefully: What were you doing? Do NOT repeat the same action. Consider: 1) Running smaller test subsets, 2) Adding output limits, 3) Taking a different approach entirely. Explain your analysis before proceeding."
+    sleep 10
+  else
+    echo -e "${YELLOW}Restarting after crash... (Session: ${SESSION_ID})${NC}"
+    MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."
+    sleep 3
+  fi
+
+  claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" && break
+done

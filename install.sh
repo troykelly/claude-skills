@@ -390,13 +390,29 @@ install_plugin() {
     return 1
   fi
 
+  # Claude plugin commands require interactive TTY (Ink library)
+  # When running via curl|bash, stdin is not a TTY
+  if [[ ! -t 0 ]]; then
+    log_warn "Non-interactive mode detected - plugin installation requires TTY"
+    log_info "Run these commands manually after installation:"
+    echo ""
+    echo -e "  ${CYAN}claude /plugin marketplace add troykelly/claude-skills${NC}"
+    echo -e "  ${CYAN}claude /plugin install issue-driven-development@troykelly-skills${NC}"
+    echo ""
+    return 0
+  fi
+
   log_info "Installing issue-driven-development plugin..."
 
   # Add marketplace
-  claude /plugin marketplace add troykelly/claude-skills 2>/dev/null || true
+  if ! claude /plugin marketplace add troykelly/claude-skills 2>/dev/null; then
+    log_warn "Could not add marketplace - you may need to add it manually"
+  fi
 
   # Install plugin
-  claude /plugin install issue-driven-development@troykelly-skills 2>/dev/null || true
+  if ! claude /plugin install issue-driven-development@troykelly-skills 2>/dev/null; then
+    log_warn "Could not install plugin - you may need to install it manually"
+  fi
 
   log_success "Plugin installation attempted (verify with: claude /plugin list)"
 }
@@ -474,15 +490,19 @@ main() {
   echo "  1. Authenticate GitHub CLI (if not already done):"
   echo -e "     ${CYAN}gh auth login${NC}"
   echo ""
-  echo "  2. Set required environment variables:"
+  echo "  2. Install the Claude Code plugin (if not done above):"
+  echo -e "     ${CYAN}claude /plugin marketplace add troykelly/claude-skills${NC}"
+  echo -e "     ${CYAN}claude /plugin install issue-driven-development@troykelly-skills${NC}"
+  echo ""
+  echo "  3. Set required environment variables:"
   echo -e "     ${CYAN}export GITHUB_PROJECT=\"https://github.com/users/YOU/projects/N\"${NC}"
   echo -e "     ${CYAN}export GITHUB_PROJECT_NUM=N${NC}"
   echo -e "     ${CYAN}export GH_PROJECT_OWNER=\"@me\"${NC}"
   echo ""
-  echo "  3. Run autonomous mode from any git repository:"
+  echo "  4. Run autonomous mode from any git repository:"
   echo -e "     ${CYAN}claude-autonomous${NC}"
   echo ""
-  echo "  4. Or focus on a specific epic:"
+  echo "  5. Or focus on a specific epic:"
   echo -e "     ${CYAN}claude-autonomous --epic 42${NC}"
   echo ""
   echo -e "Documentation: ${BLUE}${REPO_URL}${NC}"

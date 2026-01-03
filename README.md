@@ -216,16 +216,48 @@ For long-running autonomous operation that survives crashes and continues until 
 ### Quick Start Command
 
 ```bash
-# Generate session ID, sync repo, and start autonomous operation with intelligent crash recovery
+# Generate session ID, create isolated worktree from origin/main, and start autonomous operation
 SESSION_ID=$(uuidgen || cat /proc/sys/kernel/random/uuid) && \
+REPO_ROOT=$(git rev-parse --show-toplevel) && \
+REPO_NAME=$(basename "${REPO_ROOT}") && \
+WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}" && \
 echo "$(date -Iseconds) ${SESSION_ID}" >> /tmp/claude-sessions.txt && \
-git fetch && git checkout main && git pull && clear && \
+git fetch origin main && \
+git worktree add "${WORKTREE_DIR}" origin/main && \
+cleanup() { \
+  echo "Cleaning up worktree ${WORKTREE_DIR}..."; \
+  cd "${REPO_ROOT}" && \
+  git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null; \
+  echo "Session ${SESSION_ID} ended at $(date -Iseconds)"; \
+} && \
+trap cleanup EXIT && \
+cd "${WORKTREE_DIR}" && \
+clear && \
 echo "Session ID: ${SESSION_ID}" && \
+echo "Worktree: ${WORKTREE_DIR}" && \
+if [ -n "${WORK_EPIC}" ]; then \
+  echo "Focus Epic: #${WORK_EPIC}"; \
+  EPIC_INSTRUCTION="Focus exclusively on Epic #${WORK_EPIC} and its child issues. Do not work on unrelated issues."; \
+else \
+  EPIC_INSTRUCTION="Work through all open epics and issues in priority order."; \
+fi && \
+INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
+
+This worktree was created from origin/main to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
+
+IMPORTANT WORKFLOW NOTES:
+- You have your own isolated copy of the codebase - other agents may be working in parallel
+- Create feature branches for your work and push them to origin
+- Open PRs when work is complete - do not merge directly to main
+- If you need latest changes from main, you can pull origin/main into your worktree
+
+TASK: Use your issue driven development skill to work wholly autonomously until all assigned work is complete.
+
+${EPIC_INSTRUCTION}" && \
 CRASH_TIMES=() && \
 CRASH_WINDOW=60 && \
 CRASH_THRESHOLD=3 && \
-claude --dangerously-skip-permissions --session-id "${SESSION_ID}" \
-  "Use your issue driven development skill to work wholly autonomously until all issues and epics are complete." || \
+claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || \
 while true; do \
   NOW=$(date +%s) && \
   CRASH_TIMES+=("$NOW") && \
@@ -253,12 +285,30 @@ done
 | Step | Purpose |
 |------|---------|
 | `SESSION_ID=$(uuidgen \|\| ...)` | Generate unique session ID (works on macOS and Linux) |
-| `echo ... >> /tmp/claude-sessions.txt` | Log session for debugging/audit |
-| `git fetch && git checkout main && git pull` | Ensure clean, up-to-date starting point |
+| `WORKTREE_DIR` | Isolated workspace in `/tmp/claude-worktrees/` |
+| `git worktree add` | Create isolated copy from `origin/main` for parallel work |
+| `trap cleanup EXIT` | Auto-remove worktree on exit (normal or crash) |
+| `WORK_EPIC` env var | Optional: focus on specific epic (e.g., `WORK_EPIC=42`) |
 | `--dangerously-skip-permissions` | Allow file/command operations without prompts |
 | `--session-id` | Enable session resumption after crash |
-| `CRASH_TIMES`, `CRASH_WINDOW`, `CRASH_THRESHOLD` | Track crash frequency for loop detection |
 | Crash loop detection | If 3+ crashes in 60s, warn Claude about likely OOM/runaway process |
+
+### Running Multiple Agents in Parallel
+
+The worktree isolation enables running multiple agents simultaneously:
+
+```bash
+# Terminal 1: Work on Epic #10
+WORK_EPIC=10 ./run-autonomous.sh
+
+# Terminal 2: Work on Epic #15
+WORK_EPIC=15 ./run-autonomous.sh
+
+# Terminal 3: Work on all remaining issues
+./run-autonomous.sh
+```
+
+Each agent gets its own isolated worktree, creates feature branches, and opens PRs - no conflicts.
 
 ### How It Survives
 

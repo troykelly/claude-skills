@@ -1,0 +1,453 @@
+#!/usr/bin/env bash
+#
+# claude-account - Manage multiple Claude Code accounts via .env
+#
+# Usage:
+#   claude-account <command> [options]
+#
+# Commands:
+#   capture             Save current account to .env (in current directory)
+#   list                Show all saved accounts in .env
+#   current             Show current active account
+#   switch              Rotate to next account
+#   switch <email>      Switch to specific account by email
+#   remove <email>      Remove a saved account from .env
+#
+# Environment Variables:
+#   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
+#
+# Examples:
+#   claude-account capture                    # Save current account
+#   claude-account list                       # Show all accounts in .env
+#   claude-account switch                     # Rotate to next
+#   claude-account switch user@example.com   # Switch to specific
+#
+# Storage Format in .env:
+#   CLAUDE_ACCOUNT_<SANITIZED_EMAIL>='{"accountUuid":"...","emailAddress":"...",...}'
+#   CLAUDE_ACCOUNTS_LIST="email1,email2,email3"
+#
+# Config: ~/.claude.json (Claude Code's config)
+#
+# Tip: Sync your .env to 1Password for persistence across devcontainer rebuilds
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Files
+CLAUDE_CONFIG="${HOME}/.claude.json"
+ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
+
+# Check dependencies
+check_deps() {
+  if ! command -v jq &>/dev/null; then
+    echo -e "${RED}Error: jq is required but not installed${NC}"
+    echo "Install with: brew install jq / apt-get install jq"
+    exit 1
+  fi
+}
+
+# Sanitize email for env var name (replace @ and . with _)
+sanitize_email() {
+  local email="$1"
+  echo "$email" | tr '@.' '_' | tr '[:lower:]' '[:upper:]'
+}
+
+# Get current account from ~/.claude.json
+get_current_account() {
+  if [[ ! -f "$CLAUDE_CONFIG" ]]; then
+    echo ""
+    return
+  fi
+  jq -c '.oauthAccount // empty' "$CLAUDE_CONFIG" 2>/dev/null || echo ""
+}
+
+# Get current email
+get_current_email() {
+  local account
+  account=$(get_current_account)
+  if [[ -n "$account" ]]; then
+    echo "$account" | jq -r '.emailAddress // empty'
+  fi
+}
+
+# Get accounts list from .env
+get_accounts_list() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo ""
+    return
+  fi
+  grep "^CLAUDE_ACCOUNTS_LIST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || echo ""
+}
+
+# Get account data from .env by email
+get_account_data() {
+  local email="$1"
+  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$email")"
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo ""
+    return
+  fi
+
+  local line
+  line=$(grep "^${var_name}=" "$ENV_FILE" 2>/dev/null || echo "")
+  if [[ -n "$line" ]]; then
+    # Extract JSON value (handle both single and double quotes)
+    echo "$line" | sed "s/^${var_name}=//" | tr -d "'" | tr -d '"'
+  fi
+}
+
+# Update or add line in .env
+update_env_line() {
+  local key="$1"
+  local value="$2"
+
+  # Create .env if it doesn't exist
+  touch "$ENV_FILE"
+
+  # Remove existing line if present
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    local temp_file
+    temp_file=$(mktemp)
+    grep -v "^${key}=" "$ENV_FILE" > "$temp_file"
+    mv "$temp_file" "$ENV_FILE"
+  fi
+
+  # Add new line
+  echo "${key}='${value}'" >> "$ENV_FILE"
+}
+
+# Remove line from .env
+remove_env_line() {
+  local key="$1"
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  local temp_file
+  temp_file=$(mktemp)
+  grep -v "^${key}=" "$ENV_FILE" > "$temp_file" || true
+  mv "$temp_file" "$ENV_FILE"
+}
+
+# List all saved accounts
+list_accounts() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${YELLOW}No .env file found at: ${ENV_FILE}${NC}"
+    echo ""
+    echo "Use 'claude-account capture' to save the current account."
+    return
+  fi
+
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    echo -e "${YELLOW}No accounts saved in .env${NC}"
+    echo ""
+    echo "Use 'claude-account capture' to save the current account."
+    return
+  fi
+
+  local current_email
+  current_email=$(get_current_email)
+
+  echo -e "${CYAN}Saved Claude Accounts (in ${ENV_FILE}):${NC}"
+  echo ""
+
+  local count=0
+  IFS=',' read -ra emails <<< "$accounts_list"
+  for email in "${emails[@]}"; do
+    local account_data org_name display_name
+    account_data=$(get_account_data "$email")
+
+    if [[ -z "$account_data" ]]; then
+      echo -e "  ${RED}?${NC} ${email} ${RED}(data missing)${NC}"
+      continue
+    fi
+
+    org_name=$(echo "$account_data" | jq -r '.organizationName // "N/A"')
+    display_name=$(echo "$account_data" | jq -r '.displayName // "N/A"')
+
+    if [[ "$email" == "$current_email" ]]; then
+      echo -e "  ${GREEN}*${NC} ${BOLD}${email}${NC} ${GREEN}(active)${NC}"
+    else
+      echo -e "    ${email}"
+    fi
+    echo -e "      ${BLUE}Name:${NC} ${display_name}"
+    echo -e "      ${BLUE}Org:${NC}  ${org_name}"
+    echo ""
+    ((count++))
+  done
+
+  echo -e "${BLUE}Total:${NC} ${count} account(s)"
+}
+
+# Capture current account
+capture_account() {
+  local current_account current_email
+  current_account=$(get_current_account)
+
+  if [[ -z "$current_account" ]]; then
+    echo -e "${RED}Error: No account found in ${CLAUDE_CONFIG}${NC}"
+    echo ""
+    echo "Log in to Claude Code first with: claude"
+    exit 1
+  fi
+
+  current_email=$(echo "$current_account" | jq -r '.emailAddress')
+
+  if [[ -z "$current_email" || "$current_email" == "null" ]]; then
+    echo -e "${RED}Error: Could not read email from current account${NC}"
+    exit 1
+  fi
+
+  # Save account data
+  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$current_email")"
+  update_env_line "$var_name" "$current_account"
+
+  # Update accounts list
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    update_env_line "CLAUDE_ACCOUNTS_LIST" "$current_email"
+  elif [[ ! "$accounts_list" =~ (^|,)${current_email}(,|$) ]]; then
+    update_env_line "CLAUDE_ACCOUNTS_LIST" "${accounts_list},${current_email}"
+  fi
+  # If already in list, don't need to update list (just updated data above)
+
+  echo -e "${GREEN}Captured account:${NC} ${current_email}"
+  echo -e "${BLUE}Saved to:${NC} ${ENV_FILE}"
+
+  local count=0
+  accounts_list=$(get_accounts_list)
+  IFS=',' read -ra emails <<< "$accounts_list"
+  count=${#emails[@]}
+  echo -e "${BLUE}Total saved:${NC} ${count} account(s)"
+  echo ""
+  echo -e "${YELLOW}Tip:${NC} Add ${ENV_FILE} to 1Password for persistence across rebuilds"
+}
+
+# Show current account
+show_current() {
+  local current_email current_account
+  current_email=$(get_current_email)
+  current_account=$(get_current_account)
+
+  if [[ -z "$current_email" ]]; then
+    echo -e "${YELLOW}No account currently logged in.${NC}"
+    return
+  fi
+
+  echo -e "${CYAN}Current Account:${NC}"
+  echo ""
+  echo -e "  ${BOLD}${current_email}${NC}"
+  echo -e "  ${BLUE}Name:${NC}    $(echo "$current_account" | jq -r '.displayName // "N/A"')"
+  echo -e "  ${BLUE}Org:${NC}     $(echo "$current_account" | jq -r '.organizationName // "N/A"')"
+  echo -e "  ${BLUE}Role:${NC}    $(echo "$current_account" | jq -r '.organizationRole // "N/A"')"
+  echo -e "  ${BLUE}UUID:${NC}    $(echo "$current_account" | jq -r '.accountUuid // "N/A"')"
+
+  # Check if saved in .env
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+  if [[ "$accounts_list" =~ (^|,)${current_email}(,|$) ]]; then
+    echo -e "  ${GREEN}Status:${NC}  Saved in .env"
+  else
+    echo -e "  ${YELLOW}Status:${NC}  Not saved (use 'claude-account capture')"
+  fi
+}
+
+# Switch to a specific account or rotate
+switch_account() {
+  local target_email="${1:-}"
+
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    echo -e "${RED}Error: No accounts saved in .env${NC}"
+    echo "Use 'claude-account capture' first."
+    exit 1
+  fi
+
+  IFS=',' read -ra emails <<< "$accounts_list"
+  local account_count=${#emails[@]}
+
+  if [[ $account_count -eq 0 ]]; then
+    echo -e "${RED}Error: No accounts saved.${NC}"
+    exit 1
+  fi
+
+  if [[ $account_count -eq 1 ]]; then
+    echo -e "${YELLOW}Only one account saved. Nothing to switch to.${NC}"
+    exit 0
+  fi
+
+  local current_email new_email new_data
+  current_email=$(get_current_email)
+
+  if [[ -n "$target_email" ]]; then
+    # Switch to specific account
+    if [[ ! "$accounts_list" =~ (^|,)${target_email}(,|$) ]]; then
+      echo -e "${RED}Error: Account not found: ${target_email}${NC}"
+      echo ""
+      echo "Available accounts:"
+      printf '  %s\n' "${emails[@]}"
+      exit 1
+    fi
+    new_email="$target_email"
+  else
+    # Rotate to next account
+    local found_current=false
+    new_email=""
+
+    for email in "${emails[@]}"; do
+      if [[ "$found_current" == "true" ]]; then
+        new_email="$email"
+        break
+      fi
+      if [[ "$email" == "$current_email" ]]; then
+        found_current=true
+      fi
+    done
+
+    # If we didn't find next, wrap to first
+    if [[ -z "$new_email" ]]; then
+      new_email="${emails[0]}"
+    fi
+  fi
+
+  if [[ "$new_email" == "$current_email" ]]; then
+    echo -e "${YELLOW}Already using account: ${new_email}${NC}"
+    exit 0
+  fi
+
+  new_data=$(get_account_data "$new_email")
+
+  if [[ -z "$new_data" ]]; then
+    echo -e "${RED}Error: Account data missing for: ${new_email}${NC}"
+    echo "Try recapturing the account."
+    exit 1
+  fi
+
+  # Update ~/.claude.json
+  if [[ ! -f "$CLAUDE_CONFIG" ]]; then
+    echo -e "${RED}Error: ${CLAUDE_CONFIG} not found${NC}"
+    exit 1
+  fi
+
+  # Backup current config
+  cp "$CLAUDE_CONFIG" "${CLAUDE_CONFIG}.backup"
+
+  # Update oauthAccount
+  local temp_file
+  temp_file=$(mktemp)
+  jq --argjson new_account "$new_data" '.oauthAccount = $new_account' "$CLAUDE_CONFIG" > "$temp_file"
+  mv "$temp_file" "$CLAUDE_CONFIG"
+
+  echo -e "${GREEN}Switched account:${NC}"
+  echo -e "  ${YELLOW}From:${NC} ${current_email:-"(none)"}"
+  echo -e "  ${GREEN}To:${NC}   ${new_email}"
+  echo ""
+  echo -e "${BLUE}Note:${NC} Restart any running Claude Code sessions for changes to take effect."
+}
+
+# Remove a saved account
+remove_account() {
+  local target_email="${1:-}"
+
+  if [[ -z "$target_email" ]]; then
+    echo -e "${RED}Error: Email required${NC}"
+    echo "Usage: claude-account remove <email>"
+    exit 1
+  fi
+
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    echo -e "${RED}Error: No accounts saved.${NC}"
+    exit 1
+  fi
+
+  if [[ ! "$accounts_list" =~ (^|,)${target_email}(,|$) ]]; then
+    echo -e "${RED}Error: Account not found: ${target_email}${NC}"
+    exit 1
+  fi
+
+  # Remove account data
+  local var_name="CLAUDE_ACCOUNT_$(sanitize_email "$target_email")"
+  remove_env_line "$var_name"
+
+  # Update accounts list
+  local new_list=""
+  IFS=',' read -ra emails <<< "$accounts_list"
+  for email in "${emails[@]}"; do
+    if [[ "$email" != "$target_email" ]]; then
+      if [[ -z "$new_list" ]]; then
+        new_list="$email"
+      else
+        new_list="${new_list},${email}"
+      fi
+    fi
+  done
+
+  if [[ -z "$new_list" ]]; then
+    remove_env_line "CLAUDE_ACCOUNTS_LIST"
+  else
+    update_env_line "CLAUDE_ACCOUNTS_LIST" "$new_list"
+  fi
+
+  echo -e "${GREEN}Removed account:${NC} ${target_email}"
+}
+
+# Show help
+show_help() {
+  head -32 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
+}
+
+# Main
+main() {
+  check_deps
+
+  local command="${1:-}"
+  shift || true
+
+  case "$command" in
+    capture)
+      capture_account
+      ;;
+    list|ls)
+      list_accounts
+      ;;
+    current)
+      show_current
+      ;;
+    switch)
+      switch_account "${1:-}"
+      ;;
+    remove|rm)
+      remove_account "${1:-}"
+      ;;
+    -h|--help|help|"")
+      show_help
+      ;;
+    *)
+      echo -e "${RED}Unknown command: ${command}${NC}"
+      echo "Use 'claude-account --help' for usage."
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

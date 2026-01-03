@@ -352,35 +352,39 @@ install_claude_code() {
   fi
 }
 
-# Install the claude-autonomous script
-install_script() {
-  local script_url="${RAW_URL}/scripts/claude-autonomous"
-  local install_path="${INSTALL_DIR}/claude-autonomous"
-
-  log_info "Installing claude-autonomous to ${install_path}..."
+# Install helper scripts (claude-autonomous, claude-account)
+install_scripts() {
+  local scripts=("claude-autonomous" "claude-account")
 
   # Create install dir if needed
   if [[ ! -d "$INSTALL_DIR" ]]; then
     maybe_sudo mkdir -p "$INSTALL_DIR"
   fi
 
-  # Download or copy script
-  if [[ -f "scripts/claude-autonomous" ]]; then
-    # Running from cloned repo
-    maybe_sudo cp scripts/claude-autonomous "$install_path"
-  else
-    # Download from GitHub
-    curl -fsSL "$script_url" | maybe_sudo tee "$install_path" > /dev/null
-  fi
+  for script_name in "${scripts[@]}"; do
+    local script_url="${RAW_URL}/scripts/${script_name}"
+    local install_path="${INSTALL_DIR}/${script_name}"
 
-  maybe_sudo chmod +x "$install_path"
+    log_info "Installing ${script_name} to ${install_path}..."
 
-  if [[ -x "$install_path" ]]; then
-    log_success "Installed claude-autonomous to ${install_path}"
-  else
-    log_error "Failed to install claude-autonomous"
-    return 1
-  fi
+    # Download or copy script
+    if [[ -f "scripts/${script_name}" ]]; then
+      # Running from cloned repo
+      maybe_sudo cp "scripts/${script_name}" "$install_path"
+    else
+      # Download from GitHub
+      curl -fsSL "$script_url" | maybe_sudo tee "$install_path" > /dev/null
+    fi
+
+    maybe_sudo chmod +x "$install_path"
+
+    if [[ -x "$install_path" ]]; then
+      log_success "Installed ${script_name} to ${install_path}"
+    else
+      log_error "Failed to install ${script_name}"
+      return 1
+    fi
+  done
 }
 
 # Install Claude Code plugin via settings.json (works non-interactively)
@@ -546,10 +550,10 @@ main() {
     check_gh_auth
   fi
 
-  # Install the script
-  echo -e "${BOLD}Installing claude-autonomous...${NC}"
+  # Install helper scripts
+  echo -e "${BOLD}Installing helper scripts...${NC}"
   echo ""
-  install_script
+  install_scripts
 
   # Install plugin
   if [[ "$SKIP_PLUGIN" != "true" ]]; then

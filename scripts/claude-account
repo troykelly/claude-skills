@@ -11,7 +11,7 @@
 #   current             Show current active account
 #   switch              Rotate to next account
 #   switch <email>      Switch to specific account by email
-#   remove <email>      Remove a saved account from .env
+#   remove [-f] <email> Remove a saved account from .env (prompts for confirmation)
 #
 # Environment Variables:
 #   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
@@ -44,6 +44,23 @@ NC='\033[0m'
 # Files
 CLAUDE_CONFIG="${HOME}/.claude.json"
 ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
+
+# Temp file tracking for cleanup
+TEMP_FILES=()
+cleanup_temp_files() {
+  for f in "${TEMP_FILES[@]}"; do
+    [[ -f "$f" ]] && rm -f "$f"
+  done
+}
+trap cleanup_temp_files EXIT
+
+# Create tracked temp file
+make_temp() {
+  local tmp
+  tmp=$(mktemp)
+  TEMP_FILES+=("$tmp")
+  echo "$tmp"
+}
 
 # Check dependencies
 check_deps() {
@@ -120,7 +137,7 @@ update_env_line() {
   # Remove existing line if present
   if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
     local temp_file
-    temp_file=$(mktemp)
+    temp_file=$(make_temp)
     grep -v "^${key}=" "$ENV_FILE" > "$temp_file"
     mv "$temp_file" "$ENV_FILE"
   fi
@@ -146,7 +163,7 @@ remove_env_line() {
   fi
 
   local temp_file
-  temp_file=$(mktemp)
+  temp_file=$(make_temp)
   grep -v "^${key}=" "$ENV_FILE" > "$temp_file" || true
   mv "$temp_file" "$ENV_FILE"
 }
@@ -386,12 +403,14 @@ switch_account() {
     exit 1
   fi
 
-  # Backup current config
-  cp "$CLAUDE_CONFIG" "${CLAUDE_CONFIG}.backup"
+  # Backup current config with timestamp
+  local backup_file="${CLAUDE_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+  cp "$CLAUDE_CONFIG" "$backup_file"
+  echo -e "${BLUE}Backup:${NC} ${backup_file}"
 
   # Update oauthAccount
   local temp_file
-  temp_file=$(mktemp)
+  temp_file=$(make_temp)
   jq --argjson new_account "$new_data" '.oauthAccount = $new_account' "$CLAUDE_CONFIG" > "$temp_file"
   mv "$temp_file" "$CLAUDE_CONFIG"
 
@@ -404,11 +423,26 @@ switch_account() {
 
 # Remove a saved account
 remove_account() {
-  local target_email="${1:-}"
+  local force=false
+  local target_email=""
+
+  # Parse args
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force)
+        force=true
+        shift
+        ;;
+      *)
+        target_email="$1"
+        shift
+        ;;
+    esac
+  done
 
   if [[ -z "$target_email" ]]; then
     echo -e "${RED}Error: Email required${NC}"
-    echo "Usage: claude-account remove <email>"
+    echo "Usage: claude-account remove [-f|--force] <email>"
     exit 1
   fi
 
@@ -424,6 +458,17 @@ remove_account() {
   if ! email_in_list "$target_email" "$accounts_list"; then
     echo -e "${RED}Error: Account not found in ${ENV_FILE}: ${target_email}${NC}"
     exit 1
+  fi
+
+  # Confirm unless --force
+  if [[ "$force" != "true" ]]; then
+    echo -e "${YELLOW}Remove account: ${target_email}${NC}"
+    echo -n "Are you sure? [y/N] "
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      echo "Cancelled."
+      exit 0
+    fi
   fi
 
   # Remove account data
@@ -478,7 +523,7 @@ main() {
       switch_account "${1:-}"
       ;;
     remove|rm)
-      remove_account "${1:-}"
+      remove_account "$@"
       ;;
     -h|--help|help|"")
       show_help

@@ -220,8 +220,9 @@ curl -fsSL https://raw.githubusercontent.com/troykelly/claude-skills/main/instal
 ```
 
 This installs:
-- Required dependencies (`git`, `gh`, `jq`, `node`)
-- Claude Code CLI
+- Required dependencies (`git`, `gh`, `jq`)
+- Optional runtimes (`uv`/`uvx`, `node`) for MCP servers
+- Claude Code CLI (via official installer)
 - The `claude-autonomous` command
 - The issue-driven-development plugin
 

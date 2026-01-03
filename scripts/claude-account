@@ -48,9 +48,12 @@ ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
 # Temp file tracking for cleanup
 TEMP_FILES=()
 cleanup_temp_files() {
-  for f in "${TEMP_FILES[@]}"; do
-    [[ -f "$f" ]] && rm -f "$f"
-  done
+  # Check array has elements (compatible with older bash + set -u)
+  if [[ ${#TEMP_FILES[@]} -gt 0 ]]; then
+    for f in "${TEMP_FILES[@]}"; do
+      [[ -f "$f" ]] && rm -f "$f"
+    done
+  fi
 }
 trap cleanup_temp_files EXIT
 
@@ -64,9 +67,16 @@ make_temp() {
 
 # Check dependencies
 check_deps() {
+  local missing=()
   if ! command -v jq &>/dev/null; then
-    echo -e "${RED}Error: jq is required but not installed${NC}"
-    echo "Install with: brew install jq / apt-get install jq"
+    missing+=("jq")
+  fi
+  if ! command -v xxd &>/dev/null; then
+    missing+=("xxd")
+  fi
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo -e "${RED}Error: Missing required dependencies: ${missing[*]}${NC}"
+    echo "Install with: brew install ${missing[*]} / apt-get install ${missing[*]}"
     exit 1
   fi
 }
@@ -84,6 +94,18 @@ email_in_list() {
   local list="$2"
   # Use delimiter matching to avoid partial matches
   [[ ",${list}," == *",${email},"* ]]
+}
+
+# Parse comma-separated list into array, filtering empty elements
+parse_email_list() {
+  local list="$1"
+  local -n result_array="$2"
+  result_array=()
+  IFS=',' read -ra temp_array <<< "$list"
+  for email in "${temp_array[@]}"; do
+    # Skip empty elements
+    [[ -n "$email" ]] && result_array+=("$email")
+  done
 }
 
 # Get current account from ~/.claude.json
@@ -131,8 +153,11 @@ update_env_line() {
   local key="$1"
   local value="$2"
 
-  # Create .env if it doesn't exist
-  touch "$ENV_FILE"
+  # Create .env if it doesn't exist, with secure permissions
+  if [[ ! -f "$ENV_FILE" ]]; then
+    touch "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+  fi
 
   # Remove existing line if present
   if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
@@ -189,7 +214,8 @@ list_accounts() {
   echo ""
 
   local count=0
-  IFS=',' read -ra emails <<< "$accounts_list"
+  local emails
+  parse_email_list "$accounts_list" emails
   for email in "${emails[@]}"; do
     local account_data org_name display_name
     account_data=$(get_account_data "$email")
@@ -284,8 +310,9 @@ EOF
   echo -e "${BLUE}Saved to:${NC} ${ENV_FILE}"
 
   local count=0
+  local emails
   accounts_list=$(get_accounts_list_from_file)
-  IFS=',' read -ra emails <<< "$accounts_list"
+  parse_email_list "$accounts_list" emails
   count=${#emails[@]}
   echo -e "${BLUE}Total saved:${NC} ${count} account(s)"
   echo ""
@@ -337,7 +364,8 @@ switch_account() {
     exit 1
   fi
 
-  IFS=',' read -ra emails <<< "$accounts_list"
+  local emails
+  parse_email_list "$accounts_list" emails
   local account_count=${#emails[@]}
 
   if [[ $account_count -eq 0 ]]; then
@@ -477,7 +505,8 @@ remove_account() {
 
   # Update accounts list
   local new_list=""
-  IFS=',' read -ra emails <<< "$accounts_list"
+  local emails
+  parse_email_list "$accounts_list" emails
   for email in "${emails[@]}"; do
     if [[ "$email" != "$target_email" ]]; then
       if [[ -z "$new_list" ]]; then

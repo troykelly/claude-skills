@@ -12,8 +12,10 @@
 #
 # Environment Variables:
 #   WORK_EPIC            Same as --epic
-#   CLAUDE_MODEL         Model to use (default: claude-sonnet-4-20250514)
 #   GITHUB_TOKEN         GitHub token for MCP servers (auto-fetched from gh if not set)
+#   MAX_CRASHES          Maximum crashes before giving up (default: 10)
+#
+# Note: Uses claude-opus-4-5-20251101 (Opus 4.5) as the default model
 #
 # Examples:
 #   claude-autonomous                    # Work on all issues
@@ -83,10 +85,19 @@ check_tool() {
   fi
 }
 
-check_tool "git" "apt install git / brew install git"
+check_tool "git" "apt-get install git / brew install git"
 check_tool "gh" "https://cli.github.com/"
-check_tool "claude" "npm install -g @anthropic-ai/claude-code"
-check_tool "jq" "apt install jq / brew install jq"
+check_tool "claude" "curl -fsSL https://console.anthropic.com/install.sh | sh"
+check_tool "jq" "apt-get install jq / brew install jq"
+
+# Check git version supports worktrees (added in git 2.5)
+GIT_VERSION=$(git --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
+GIT_MAJOR=$(echo "$GIT_VERSION" | cut -d. -f1)
+GIT_MINOR=$(echo "$GIT_VERSION" | cut -d. -f2)
+if [[ "$GIT_MAJOR" -lt 2 ]] || [[ "$GIT_MAJOR" -eq 2 && "$GIT_MINOR" -lt 5 ]]; then
+  echo -e "${RED}Error: git 2.5+ required for worktree support (found: $GIT_VERSION)${NC}"
+  exit 1
+fi
 
 # Verify gh is authenticated
 if ! gh auth status &>/dev/null; then
@@ -115,10 +126,31 @@ SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null
 REPO_ROOT=$(git rev-parse --show-toplevel)
 REPO_NAME=$(basename "${REPO_ROOT}")
 WORKTREE_DIR="/tmp/claude-worktrees/${REPO_NAME}/${SESSION_ID}"
+MAX_CRASHES="${MAX_CRASHES:-10}"
 
-# Log session
+# Detect default branch (main, master, or other)
+DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "main")
+if [[ -z "$DEFAULT_BRANCH" ]]; then
+  # Fallback: check if main or master exists
+  if git rev-parse --verify origin/main &>/dev/null; then
+    DEFAULT_BRANCH="main"
+  elif git rev-parse --verify origin/master &>/dev/null; then
+    DEFAULT_BRANCH="master"
+  else
+    echo -e "${RED}Error: Could not detect default branch${NC}"
+    exit 1
+  fi
+fi
+
+# Clean up stale worktrees from previous runs
+echo -e "${YELLOW}Pruning stale worktrees...${NC}"
+git worktree prune 2>/dev/null || true
+
+# Log session with restricted permissions
 mkdir -p /tmp/claude-worktrees
+chmod 700 /tmp/claude-worktrees 2>/dev/null || true
 echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} epic=${EPIC:-all}" >> /tmp/claude-sessions.txt
+chmod 600 /tmp/claude-sessions.txt 2>/dev/null || true
 
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║${NC}          ${GREEN}Claude Autonomous Issue-Driven Development${NC}          ${CYAN}║${NC}"
@@ -126,8 +158,10 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 echo -e "${BLUE}Session ID:${NC}   ${SESSION_ID}"
 echo -e "${BLUE}Repository:${NC}   ${REPO_NAME}"
+echo -e "${BLUE}Branch:${NC}       ${DEFAULT_BRANCH}"
 echo -e "${BLUE}Worktree:${NC}     ${WORKTREE_DIR}"
 echo -e "${BLUE}GitHub Token:${NC} ${GREEN}✓ Set${NC}"
+echo -e "${BLUE}Max Crashes:${NC}  ${MAX_CRASHES}"
 if [[ -n "$EPIC" ]]; then
   echo -e "${BLUE}Focus Epic:${NC}   #${EPIC}"
 else
@@ -136,19 +170,25 @@ fi
 echo ""
 
 # Fetch and create worktree
-echo -e "${YELLOW}Creating isolated worktree from origin/main...${NC}"
-git fetch origin main
-git worktree add "${WORKTREE_DIR}" origin/main
+echo -e "${YELLOW}Creating isolated worktree from origin/${DEFAULT_BRANCH}...${NC}"
+git fetch origin "${DEFAULT_BRANCH}"
+git worktree add "${WORKTREE_DIR}" "origin/${DEFAULT_BRANCH}"
 
 # Cleanup function
 cleanup() {
+  local exit_code=$?
   echo ""
   echo -e "${YELLOW}Cleaning up worktree ${WORKTREE_DIR}...${NC}"
   cd "${REPO_ROOT}" 2>/dev/null || true
   git worktree remove --force "${WORKTREE_DIR}" 2>/dev/null || true
+  git worktree prune 2>/dev/null || true
   echo -e "${GREEN}Session ${SESSION_ID} ended at $(date -Iseconds)${NC}"
+  exit $exit_code
 }
+
+# Handle signals gracefully
 trap cleanup EXIT
+trap 'echo -e "\n${YELLOW}Interrupted - cleaning up...${NC}"; cleanup' INT TERM
 
 # Change to worktree
 cd "${WORKTREE_DIR}"
@@ -163,13 +203,13 @@ fi
 # Build initial prompt
 INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
 
-This worktree was created from origin/main to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
+This worktree was created from origin/${DEFAULT_BRANCH} to allow multiple agents to work in parallel without conflicts. Your session ID is ${SESSION_ID}.
 
 IMPORTANT WORKFLOW NOTES:
 - You have your own isolated copy of the codebase - other agents may be working in parallel
 - Create feature branches for your work and push them to origin
-- Open PRs when work is complete - do not merge directly to main
-- If you need latest changes from main, you can pull origin/main into your worktree
+- Open PRs when work is complete - do not merge directly to ${DEFAULT_BRANCH}
+- If you need latest changes from ${DEFAULT_BRANCH}, you can pull origin/${DEFAULT_BRANCH} into your worktree
 
 TASK: Use your issue driven development skill to work wholly autonomously until all assigned work is complete.
 
@@ -179,6 +219,7 @@ ${EPIC_INSTRUCTION}"
 CRASH_TIMES=()
 CRASH_WINDOW=60
 CRASH_THRESHOLD=3
+TOTAL_CRASHES=0
 
 echo -e "${GREEN}Starting autonomous operation...${NC}"
 echo ""
@@ -188,8 +229,17 @@ claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PR
 while true; do
   NOW=$(date +%s)
   CRASH_TIMES+=("$NOW")
+  ((TOTAL_CRASHES++))
 
-  # Count recent crashes
+  # Check max crash limit
+  if (( TOTAL_CRASHES >= MAX_CRASHES )); then
+    echo -e "${RED}Maximum crash limit reached (${TOTAL_CRASHES}/${MAX_CRASHES})${NC}"
+    echo -e "${RED}Session ${SESSION_ID} terminated due to excessive crashes${NC}"
+    echo "Review logs and session state before retrying."
+    exit 1
+  fi
+
+  # Count recent crashes (for loop detection)
   RECENT_CRASHES=0
   for T in "${CRASH_TIMES[@]}"; do
     if (( NOW - T < CRASH_WINDOW )); then
@@ -202,7 +252,7 @@ while true; do
     MSG="CRITICAL: You have crashed $RECENT_CRASHES times in the last ${CRASH_WINDOW} seconds. This indicates a crash loop - something you are repeatedly doing is causing you to crash (likely OOM from large test output, or a runaway process). STOP and think carefully: What were you doing? Do NOT repeat the same action. Consider: 1) Running smaller test subsets, 2) Adding output limits, 3) Taking a different approach entirely. Explain your analysis before proceeding."
     sleep 10
   else
-    echo -e "${YELLOW}Restarting after crash... (Session: ${SESSION_ID})${NC}"
+    echo -e "${YELLOW}Restarting after crash... (Session: ${SESSION_ID}, crash ${TOTAL_CRASHES}/${MAX_CRASHES})${NC}"
     MSG="You crashed or ran out of memory. This happens occasionally - continue where you left off autonomously."
     sleep 3
   fi

@@ -43,9 +43,17 @@ detect_os() {
   elif [[ -f /etc/debian_version ]]; then
     OS="debian"
     PKG_MGR="apt"
+  elif [[ -f /etc/fedora-release ]]; then
+    OS="fedora"
+    PKG_MGR="dnf"
   elif [[ -f /etc/redhat-release ]]; then
     OS="redhat"
-    PKG_MGR="yum"
+    # Use dnf if available (RHEL 8+), fall back to yum
+    if has_cmd dnf; then
+      PKG_MGR="dnf"
+    else
+      PKG_MGR="yum"
+    fi
   elif [[ -f /etc/arch-release ]]; then
     OS="arch"
     PKG_MGR="pacman"
@@ -56,6 +64,16 @@ detect_os() {
     OS="unknown"
     PKG_MGR="unknown"
   fi
+}
+
+# Verify network connectivity
+check_connectivity() {
+  log_info "Checking network connectivity..."
+  if ! curl -fsSL --connect-timeout 5 https://github.com &>/dev/null; then
+    log_error "Cannot reach github.com - check your internet connection"
+    exit 1
+  fi
+  log_success "Network connectivity OK"
 }
 
 # Logging
@@ -102,6 +120,9 @@ install_pkg() {
       maybe_sudo apt-get update -qq
       maybe_sudo apt-get install -y -qq "$pkg_apt"
       ;;
+    dnf)
+      maybe_sudo dnf install -y -q "$pkg_yum"
+      ;;
     yum)
       maybe_sudo yum install -y -q "$pkg_yum"
       ;;
@@ -146,6 +167,11 @@ install_gh() {
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | maybe_sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
       maybe_sudo apt-get update -qq
       maybe_sudo apt-get install -y -qq gh
+      ;;
+    dnf)
+      maybe_sudo dnf install -y -q 'dnf-command(config-manager)' 2>/dev/null || true
+      maybe_sudo dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
+      maybe_sudo dnf install -y -q gh
       ;;
     yum)
       maybe_sudo yum-config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
@@ -218,6 +244,10 @@ install_node() {
       curl -fsSL https://deb.nodesource.com/setup_20.x | maybe_sudo bash -
       maybe_sudo apt-get install -y -qq nodejs
       ;;
+    dnf)
+      curl -fsSL https://rpm.nodesource.com/setup_20.x | maybe_sudo bash -
+      maybe_sudo dnf install -y -q nodejs
+      ;;
     yum)
       curl -fsSL https://rpm.nodesource.com/setup_20.x | maybe_sudo bash -
       maybe_sudo yum install -y -q nodejs
@@ -244,29 +274,37 @@ install_node() {
 
 # Install Playwright and browser dependencies (for MCP Playwright server)
 install_playwright() {
+  # Ensure Node.js and npx are available first
+  if ! has_cmd node; then
+    log_warn "Node.js required for Playwright - installing..."
+    install_node
+  fi
+
+  if ! has_cmd npx; then
+    log_warn "npx not found - Node.js installation may be incomplete"
+    log_info "Try: npm install -g npx"
+    return 1
+  fi
+
   # Check if playwright is already installed globally
   if npx playwright --version &>/dev/null 2>&1; then
     log_success "Playwright already installed ($(npx playwright --version 2>/dev/null || echo 'version unknown'))"
     return 0
   fi
 
-  # Ensure Node.js is installed first
-  if ! has_cmd node; then
-    log_warn "Node.js required for Playwright - installing..."
-    install_node
-  fi
-
   log_info "Installing Playwright with Chromium browser..."
 
   # Install playwright package
-  npm install -g playwright 2>/dev/null || npm install -g @anthropic-ai/mcp-server-playwright 2>/dev/null || true
+  if ! npm install -g playwright 2>/dev/null; then
+    log_warn "Global npm install failed, trying npx approach..."
+  fi
 
   # Install Chromium browser and system dependencies
   # --with-deps installs both the browser and required system libraries
   log_info "Installing Chromium browser and system dependencies..."
 
   case "$PKG_MGR" in
-    apt|yum|pacman|apk)
+    apt|dnf|yum|pacman|apk)
       # Linux needs sudo for system dependency installation
       maybe_sudo npx playwright install --with-deps chromium 2>/dev/null || \
         npx playwright install chromium 2>/dev/null || true
@@ -375,6 +413,10 @@ main() {
   log_info "Detected OS: ${OS} (package manager: ${PKG_MGR})"
   echo ""
 
+  # Check network before downloading anything
+  check_connectivity
+  echo ""
+
   # Install dependencies
   if [[ "$SKIP_DEPS" != "true" ]]; then
     echo -e "${BOLD}Installing dependencies...${NC}"
@@ -387,7 +429,7 @@ main() {
     # UUID generator
     case "$PKG_MGR" in
       apt) install_pkg "uuidgen" "uuid-runtime" "" "" "" "" || true ;;
-      yum) install_pkg "uuidgen" "" "util-linux" "" "" "" || true ;;
+      dnf|yum) install_pkg "uuidgen" "" "util-linux" "" "" "" || true ;;
       *) true ;;  # macOS has uuidgen built-in, others have /proc/sys/kernel/random/uuid
     esac
 

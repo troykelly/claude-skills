@@ -100,7 +100,7 @@ This plugin includes recommended MCP server configurations. The following server
 | `git` | Git operations | `uvx` (Python) |
 | `memory` | Knowledge graph | `pnpm dlx` (Node.js) |
 | `github` | GitHub API | `GITHUB_TOKEN` env var |
-| `playwright` | Browser automation | `pnpm dlx` (Node.js) |
+| `playwright` | Browser automation | `npx` (Node.js) |
 
 If servers don't start, install dependencies:
 
@@ -111,7 +111,7 @@ pip install mcp-server-git
 # For Node.js servers
 pnpm add -g @modelcontextprotocol/server-memory
 pnpm add -g @modelcontextprotocol/server-github
-pnpm add -g @anthropic/mcp-playwright
+npx playwright install --with-deps chromium
 ```
 
 ---
@@ -379,7 +379,7 @@ To gracefully stop:
 | Tool | Purpose | Verification |
 |------|---------|--------------|
 | `gh` | GitHub CLI | `gh auth status` - must show logged in |
-| `git` | Version control | `git --version` |
+| `git` | Version control (2.5+) | `git --version` - worktrees require 2.5+ |
 
 ### Optional CLI Tools
 
@@ -401,7 +401,9 @@ To gracefully stop:
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
+| `GITHUB_TOKEN` | `ghp_xxxx...` | GitHub API token (auto-fetched from `gh auth token` if not set) |
 | `PEXELS_API_KEY` | `abc123...` | Pexels API key for media sourcing (required for `pexels-media` skill) |
+| `MAX_CRASHES` | `10` | Maximum crashes before autonomous mode gives up (default: 10) |
 
 ### Required MCP Servers
 
@@ -665,6 +667,9 @@ When verifying acceptance criteria, post structured comments:
 | Project fields missing | Run field creation commands from Quick Start |
 | MCP server not connected | Check Claude Code MCP configuration |
 | Environment variable not set | Add to shell profile or set before session |
+| Worktree creation fails | Run `git worktree prune` to clean stale entries |
+| Default branch detection fails | Ensure `origin` remote is configured correctly |
+| Git version too old | Upgrade git to 2.5+ for worktree support |
 
 ### Recovery Procedures
 

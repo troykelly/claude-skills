@@ -42,6 +42,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Signal handling: Ignore signals to parent so only Claude (child) receives them
+# This allows our crash recovery loops to catch Claude's exit and restart
+# The child process still receives and handles signals normally
+trap '' SIGTERM SIGINT
+
 # Defaults
 REPO_PATH=""
 EPIC=""
@@ -733,10 +738,10 @@ cleanup() {
   exit $exit_code
 }
 
-# Handle signals gracefully
+# Handle cleanup on exit only - signals are handled by the crash recovery loop
+# INT/TERM signals are ignored to parent (set at script start) so Claude receives them
+# When Claude exits from a signal, the crash recovery loop catches it and restarts
 trap cleanup EXIT
-trap 'echo -e "\n${YELLOW}Received interrupt (Ctrl+C) - shutting down gracefully...${NC}"; exit 130' INT
-trap 'echo -e "\n${YELLOW}Received termination signal - shutting down...${NC}"; exit 143' TERM
 
 # Change to worktree
 cd "${WORKTREE_DIR}"

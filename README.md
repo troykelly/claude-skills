@@ -80,6 +80,100 @@ Add to `~/.claude/settings.json`:
 4. Set required environment variables (see below)
 5. Configure your GitHub Project (see Quick Start)
 
+### Configure Your CLAUDE.md
+
+For best results with this plugin, configure your project's `CLAUDE.md` with instructions that reinforce the issue-driven workflow. Copy the following prompt and paste it into a Claude Code session in your project directory:
+
+<details>
+<summary><strong>Click to expand: CLAUDE.md Configuration Prompt</strong></summary>
+
+```
+Please update my CLAUDE.md file with development instructions optimized for the issue-driven-development plugin.
+
+IMPORTANT: First, remove any existing sections that might conflict with issue-driven development workflows (sections about commit styles, PR processes, testing workflows, code review, documentation requirements, or development methodology). Keep any project-specific configuration like API keys, server addresses, or domain-specific knowledge.
+
+Then add the following instructions:
+
+---
+
+## Development Methodology
+
+This project uses the `issue-driven-development` plugin. All work MUST follow its skills and protocols.
+
+### Foundational Rules
+
+1. **No work without an issue** - Every change requires a GitHub issue first
+2. **Never work on main** - All work happens in feature branches
+3. **Research before action** - Your training data is stale; research current patterns before coding
+4. **Skills are mandatory** - If a skill exists for what you're doing, you MUST use it
+5. **Verify before claiming** - Prove things work with evidence before stating completion
+
+### Anti-Shortcut Enforcement
+
+These behaviors are FAILURES that require stopping and redoing:
+
+| Prohibited Behavior | Why It's Wrong |
+|---------------------|----------------|
+| Skipping code review | Review artifacts are required for PR creation |
+| Skipping tests | TDD is mandatory; tests come first |
+| Skipping documentation | Inline docs and feature docs are required |
+| Batch updates at end | Issues must be updated continuously as work happens |
+| Assuming API behavior | Research current APIs; don't trust training data |
+| Skipping validation | All generated artifacts must be validated |
+| Claiming completion without proof | Show test output, verification results |
+| Working without an issue | Create the issue first, always |
+
+### Mandatory Skill Usage
+
+Before ANY of these actions, invoke the corresponding skill:
+
+| Action | Required Skill |
+|--------|----------------|
+| Starting work | `session-start` |
+| Any coding task | `issue-driven-development` |
+| Creating a PR | `pr-creation` (requires review artifact) |
+| Code review | `comprehensive-review` |
+| After 2 failures | `research-after-failure` |
+| Large task | `issue-decomposition` |
+| Debugging | `systematic-debugging` |
+
+### Quality Standards
+
+- **Full typing always** - No `any` types; everything fully typed
+- **Complete inline documentation** - JSDoc/docstrings on all public APIs
+- **TDD with coverage** - Write tests first, maintain coverage
+- **Atomic commits** - One logical change per commit
+- **IPv6-first** - IPv6 is primary; IPv4 is legacy support only
+
+### Verification Requirements
+
+Before claiming ANY task is complete:
+
+1. Tests pass (show output)
+2. Linting passes (show output)
+3. Build succeeds (show output)
+4. Acceptance criteria verified (post verification report to issue)
+5. Review artifact posted (for PRs)
+
+### Issue Lifecycle
+
+Issues must be updated CONTINUOUSLY, not at the end:
+
+- Comment when starting work
+- Comment when hitting blockers
+- Comment when making progress
+- Comment when tests pass/fail
+- Update status fields in GitHub Project
+
+---
+
+Make sure to preserve any existing project-specific configuration (environment variables, API endpoints, domain knowledge) that doesn't conflict with these instructions.
+```
+
+</details>
+
+After running this, your project will have consistent instructions that reinforce the plugin's workflow.
+
 ### Session Start Validation
 
 On each session start, the plugin validates:

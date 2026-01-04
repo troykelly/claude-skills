@@ -411,7 +411,7 @@ install_1password_cli() {
         armv7l) arch="arm" ;;
       esac
       curl -sSLo /tmp/op.zip "https://cache.agilebits.com/dist/1P/op2/pkg/v2.24.0/op_linux_${arch}_v2.24.0.zip"
-      maybe_sudo unzip -o /tmp/op.zip -d /usr/local/bin op
+      maybe_sudo unzip -o /tmp/op.zip op -d /usr/local/bin
       maybe_sudo chmod +x /usr/local/bin/op
       rm -f /tmp/op.zip
       ;;

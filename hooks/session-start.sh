@@ -106,22 +106,26 @@ fi
 
 if [ -n "$CLAUDE_ACCOUNT" ]; then
     # Get current account - extract just the email from the output
-    CURRENT_OUTPUT=$("$CLAUDE_ACCOUNT" current 2>/dev/null || echo "")
+    CURRENT_OUTPUT=$("$CLAUDE_ACCOUNT" current 2>/dev/null) || CURRENT_OUTPUT=""
+    # Strip ANSI codes before extracting email (prevents capturing escape sequences)
+    CURRENT_OUTPUT_CLEAN=$(echo "$CURRENT_OUTPUT" | sed 's/\x1b\[[0-9;]*m//g')
     # Extract email address from output (handles both "email" and formatted output)
-    CURRENT_ACCOUNT=$(echo "$CURRENT_OUTPUT" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1)
+    CURRENT_ACCOUNT=$(echo "$CURRENT_OUTPUT_CLEAN" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1) || true
 
     if [ -n "$CURRENT_ACCOUNT" ]; then
         echo -e "  ${GREEN}✓${NC} Current account: ${CURRENT_ACCOUNT}"
 
         # Get available accounts (--available outputs just emails, one per line)
-        AVAILABLE_ACCOUNTS=$("$CLAUDE_ACCOUNT" list --available 2>/dev/null || echo "")
+        # Note: Capture first, then grep to handle pipefail correctly
+        AVAILABLE_ACCOUNTS=$("$CLAUDE_ACCOUNT" list --available 2>/dev/null) || AVAILABLE_ACCOUNTS=""
 
         # Count by counting non-empty lines from --available output
-        AVAILABLE_COUNT=$(echo "$AVAILABLE_ACCOUNTS" | grep -c '@' 2>/dev/null || echo "0")
+        AVAILABLE_COUNT=$(echo "$AVAILABLE_ACCOUNTS" | grep -c '@') || AVAILABLE_COUNT=0
 
         # Get total from "Total: N account(s)" line in list output
-        TOTAL_LINE=$("$CLAUDE_ACCOUNT" list 2>/dev/null | grep "^Total:" || echo "")
-        TOTAL_COUNT=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+' | head -1)
+        LIST_OUTPUT=$("$CLAUDE_ACCOUNT" list 2>/dev/null) || LIST_OUTPUT=""
+        TOTAL_LINE=$(echo "$LIST_OUTPUT" | grep "^Total:") || TOTAL_LINE=""
+        TOTAL_COUNT=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+' | head -1) || TOTAL_COUNT=""
         [ -z "$TOTAL_COUNT" ] && TOTAL_COUNT="$AVAILABLE_COUNT"
 
         if [ "$TOTAL_COUNT" -gt 1 ]; then
@@ -135,7 +139,8 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
             # Get all account emails for switch order display
             # Use --available output format (just emails) but we need ALL accounts
             # Parse from list output - extract lines that look like email addresses at start
-            ALL_EMAILS=$("$CLAUDE_ACCOUNT" list 2>/dev/null | grep -E '^\s{0,4}[a-zA-Z0-9._%+-]+@' | sed 's/^[[:space:]]*//' | cut -d' ' -f1)
+            LIST_ALL=$("$CLAUDE_ACCOUNT" list 2>/dev/null) || LIST_ALL=""
+            ALL_EMAILS=$(echo "$LIST_ALL" | grep -E '^\s{0,4}[a-zA-Z0-9._%+-]+@' | sed 's/^[[:space:]]*//' | cut -d' ' -f1) || ALL_EMAILS=""
 
             # Show switch order (accounts other than current)
             echo ""

@@ -92,6 +92,101 @@ else
     echo -e "  ${YELLOW}!${NC} GITHUB_TOKEN not set"
 fi
 
+# Check Claude account status (multi-account support)
+echo ""
+echo "Checking Claude account status..."
+
+# Find claude-account script
+CLAUDE_ACCOUNT=""
+if [ -x "$SCRIPT_DIR/../scripts/claude-account" ]; then
+    CLAUDE_ACCOUNT="$SCRIPT_DIR/../scripts/claude-account"
+elif command -v claude-account &> /dev/null; then
+    CLAUDE_ACCOUNT="claude-account"
+fi
+
+if [ -n "$CLAUDE_ACCOUNT" ]; then
+    # Get current account
+    CURRENT_ACCOUNT=$("$CLAUDE_ACCOUNT" current 2>/dev/null || echo "")
+
+    if [ -n "$CURRENT_ACCOUNT" ]; then
+        echo -e "  ${GREEN}✓${NC} Current account: ${CURRENT_ACCOUNT}"
+
+        # Get all accounts and available accounts
+        ALL_ACCOUNTS=$("$CLAUDE_ACCOUNT" list 2>/dev/null || echo "")
+        AVAILABLE_ACCOUNTS=$("$CLAUDE_ACCOUNT" list --available 2>/dev/null || echo "")
+
+        # Count accounts
+        TOTAL_COUNT=$(echo "$ALL_ACCOUNTS" | grep -c '@' 2>/dev/null || echo "0")
+        AVAILABLE_COUNT=$(echo "$AVAILABLE_ACCOUNTS" | grep -c '@' 2>/dev/null || echo "0")
+
+        if [ "$TOTAL_COUNT" -gt 1 ]; then
+            echo -e "  ${GREEN}✓${NC} Multi-account switching: enabled"
+            echo -e "  ${BLUE}│${NC} Total accounts: ${TOTAL_COUNT}"
+
+            if [ "$AVAILABLE_COUNT" -gt 0 ]; then
+                echo -e "  ${BLUE}│${NC} Available (not exhausted): ${AVAILABLE_COUNT}"
+            fi
+
+            # Show switch order (accounts other than current)
+            echo ""
+            echo -e "  ${BLUE}Account switch order:${NC}"
+            SWITCH_ORDER=""
+            FOUND_CURRENT=false
+
+            # First pass: accounts after current
+            while IFS= read -r account; do
+                [ -z "$account" ] && continue
+                if [ "$FOUND_CURRENT" = "true" ]; then
+                    if [ -n "$SWITCH_ORDER" ]; then
+                        SWITCH_ORDER="$SWITCH_ORDER → $account"
+                    else
+                        SWITCH_ORDER="$account"
+                    fi
+                fi
+                if [ "$account" = "$CURRENT_ACCOUNT" ]; then
+                    FOUND_CURRENT=true
+                fi
+            done <<< "$ALL_ACCOUNTS"
+
+            # Second pass: accounts before current (wrap around)
+            while IFS= read -r account; do
+                [ -z "$account" ] && continue
+                if [ "$account" = "$CURRENT_ACCOUNT" ]; then
+                    break
+                fi
+                if [ -n "$SWITCH_ORDER" ]; then
+                    SWITCH_ORDER="$SWITCH_ORDER → $account"
+                else
+                    SWITCH_ORDER="$account"
+                fi
+            done <<< "$ALL_ACCOUNTS"
+
+            if [ -n "$SWITCH_ORDER" ]; then
+                echo -e "    ${CURRENT_ACCOUNT} (current)"
+                echo -e "    → ${SWITCH_ORDER}"
+            fi
+
+            # Show exhaustion status if any accounts are exhausted
+            EXHAUSTED_COUNT=$((TOTAL_COUNT - AVAILABLE_COUNT))
+            if [ "$EXHAUSTED_COUNT" -gt 0 ] && [ "$AVAILABLE_COUNT" -lt "$TOTAL_COUNT" ]; then
+                echo ""
+                echo -e "  ${YELLOW}!${NC} ${EXHAUSTED_COUNT} account(s) in cooldown"
+                WARNINGS+=("Some accounts are in cooldown from plan limits")
+            fi
+        else
+            echo -e "  ${YELLOW}○${NC} Single account mode (no switching available)"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} No Claude account detected"
+        WARNINGS+=("Could not detect current Claude account")
+    fi
+else
+    echo -e "  ${RED}✗${NC} claude-account script not found"
+    echo -e "  ${BLUE}│${NC} Multi-account switching: disabled"
+    echo -e "  ${BLUE}│${NC} Install: Add scripts/claude-account to PATH or install plugin"
+    WARNINGS+=("claude-account not available - multi-account switching disabled")
+fi
+
 # Check MCP server dependencies
 echo ""
 echo "Checking MCP server dependencies..."

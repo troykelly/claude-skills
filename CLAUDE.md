@@ -309,6 +309,7 @@ When releasing a new version, ALL of these files must be updated with the same v
 | `.claude-plugin/marketplace.json` | `plugins[0].version` | Plugin entry version |
 | `scripts/claude-account` | `VERSION="X.Y.Z"` | Script version constant |
 | `scripts/claude-autonomous` | `VERSION="X.Y.Z"` | Script version constant |
+| `README.md` | Version badge | Shields.io version badge |
 
 ### Version Bump Checklist
 
@@ -325,7 +326,10 @@ jq '.metadata.version = "X.Y.Z" | .plugins[0].version = "X.Y.Z"' .claude-plugin/
 # - scripts/claude-account
 # - scripts/claude-autonomous
 
-# 4. Verify all match
+# 4. Update README.md version badge
+sed -i '' 's/version-[0-9]*\.[0-9]*\.[0-9]*/version-X.Y.Z/' README.md
+
+# 5. Verify all match
 grep -h "version" .claude-plugin/*.json | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
 grep "^VERSION=" scripts/claude-account scripts/claude-autonomous
 ```
@@ -339,6 +343,7 @@ scripts/claude-account --version
 scripts/claude-autonomous --version
 jq -r '.version' .claude-plugin/plugin.json
 jq -r '.metadata.version, .plugins[0].version' .claude-plugin/marketplace.json
+grep -oE 'version-[0-9]+\.[0-9]+\.[0-9]+' README.md | sed 's/version-//' | head -1
 ```
 
 All should output the same version number.

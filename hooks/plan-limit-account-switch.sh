@@ -224,7 +224,7 @@ is_cooled_down() {
   init_exhaustion_file
 
   local exhausted_at now cooldown_seconds
-  exhausted_at=$(jq -r --arg email "$email" '.exhausted[$email] // empty' "$EXHAUSTION_FILE")
+  exhausted_at=$(jq -r --arg email "$email" '.exhausted[$email] // empty' "$EXHAUSTION_FILE" 2>/dev/null) || exhausted_at=""
 
   if [[ -z "$exhausted_at" ]]; then
     return 0  # Not exhausted, so "cooled down"
@@ -310,7 +310,7 @@ get_next_available() {
 # Get current account email from Claude config
 get_current_email() {
   if [[ -f "$CLAUDE_CONFIG" ]]; then
-    jq -r '.oauthAccount.emailAddress // empty' "$CLAUDE_CONFIG" 2>/dev/null
+    jq -r '.oauthAccount.emailAddress // empty' "$CLAUDE_CONFIG" 2>/dev/null || true
   fi
 }
 
@@ -359,10 +359,10 @@ main() {
   local hook_input
   hook_input=$(cat)
 
-  # Parse input
+  # Parse input (with fallbacks for malformed JSON)
   local transcript_path stop_hook_active
-  transcript_path=$(echo "$hook_input" | jq -r '.transcript_path // empty')
-  stop_hook_active=$(echo "$hook_input" | jq -r '.stop_hook_active // false')
+  transcript_path=$(echo "$hook_input" | jq -r '.transcript_path // empty' 2>/dev/null) || transcript_path=""
+  stop_hook_active=$(echo "$hook_input" | jq -r '.stop_hook_active // false' 2>/dev/null) || stop_hook_active="false"
 
   # Prevent infinite loops - if stop_hook_active is true, we already blocked once
   if [[ "$stop_hook_active" == "true" ]]; then
@@ -423,11 +423,13 @@ main() {
       session_suffix=$(get_session_suffix)
       local switch_file="${STATE_DIR}/.pending-account-switch${session_suffix}"
       mkdir -p "$(dirname "$switch_file")"
-      jq -n \
+      if ! jq -n \
         --arg from "$current_email" \
         --arg to "$next_account" \
         --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-        '{from: $from, to: $to, timestamp: $ts, reason: "plan_limit"}' > "$switch_file"
+        '{from: $from, to: $to, timestamp: $ts, reason: "plan_limit"}' > "$switch_file" 2>/dev/null; then
+        echo "Warning: Failed to write switch state file" >&2
+      fi
 
       # Force Claude to exit so it can restart with new credentials
       terminate_claude "account switch to $next_account"
@@ -442,11 +444,13 @@ main() {
       session_suffix=$(get_session_suffix)
       local sleep_file="${STATE_DIR}/.account-sleep-mode${session_suffix}"
       mkdir -p "$(dirname "$sleep_file")"
-      jq -n \
+      if ! jq -n \
         --arg account "$current_email" \
         --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
         --argjson cooldown "$COOLDOWN_MINUTES" \
-        '{exhausted_account: $account, timestamp: $ts, cooldown_minutes: $cooldown, reason: "all_accounts_exhausted"}' > "$sleep_file"
+        '{exhausted_account: $account, timestamp: $ts, cooldown_minutes: $cooldown, reason: "all_accounts_exhausted"}' > "$sleep_file" 2>/dev/null; then
+        echo "Warning: Failed to write sleep state file" >&2
+      fi
 
       # Force Claude to exit so claude-autonomous can handle cooldown
       terminate_claude "all accounts exhausted"

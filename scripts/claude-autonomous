@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.5"
+VERSION="1.6.6"
 
 # Colors
 RED='\033[0;31m'
@@ -939,9 +939,9 @@ if [[ -n "$EPIC" ]]; then
     exit 1
   }
 
-  ISSUE_STATE=$(echo "$ISSUE_JSON" | jq -r '.state')
-  ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
-  ISSUE_URL=$(echo "$ISSUE_JSON" | jq -r '.url')
+  ISSUE_STATE=$(echo "$ISSUE_JSON" | jq -r '.state' 2>/dev/null) || ISSUE_STATE=""
+  ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title' 2>/dev/null) || ISSUE_TITLE=""
+  ISSUE_URL=$(echo "$ISSUE_JSON" | jq -r '.url' 2>/dev/null) || ISSUE_URL=""
 
   if [[ "$ISSUE_STATE" != "OPEN" ]]; then
     echo -e "${RED}Error: Epic #${EPIC} is ${ISSUE_STATE}${NC}"
@@ -1185,8 +1185,8 @@ while true; do
   # (Hook writes session-specific file to CLAUDE_STATE_DIR)
   PENDING_SWITCH_FILE="${CLAUDE_STATE_DIR}/.pending-account-switch.${SESSION_ID}"
   if [[ -f "$PENDING_SWITCH_FILE" ]]; then
-    SWITCH_TO=$(jq -r '.to // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
-    SWITCH_FROM=$(jq -r '.from // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
+    SWITCH_TO=$(jq -r '.to // empty' "$PENDING_SWITCH_FILE" 2>/dev/null) || SWITCH_TO=""
+    SWITCH_FROM=$(jq -r '.from // empty' "$PENDING_SWITCH_FILE" 2>/dev/null) || SWITCH_FROM=""
     rm -f "$PENDING_SWITCH_FILE"
 
     if [[ -n "$SWITCH_TO" ]]; then
@@ -1208,7 +1208,8 @@ while true; do
   # (Hook writes session-specific file to CLAUDE_STATE_DIR)
   SLEEP_FILE="${CLAUDE_STATE_DIR}/.account-sleep-mode.${SESSION_ID}"
   if [[ -f "$SLEEP_FILE" ]]; then
-    COOLDOWN_MINS=$(jq -r '.cooldown_minutes // 5' "$SLEEP_FILE" 2>/dev/null)
+    COOLDOWN_MINS=$(jq -r '.cooldown_minutes // 5' "$SLEEP_FILE" 2>/dev/null) || COOLDOWN_MINS=5
+    [[ -z "$COOLDOWN_MINS" || ! "$COOLDOWN_MINS" =~ ^[0-9]+$ ]] && COOLDOWN_MINS=5
     rm -f "$SLEEP_FILE"
     echo -e "${YELLOW}All accounts exhausted. Waiting ${COOLDOWN_MINS} minutes for cooldown...${NC}"
     sleep $((COOLDOWN_MINS * 60))

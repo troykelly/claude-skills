@@ -99,6 +99,41 @@ maybe_sudo() {
   fi
 }
 
+# Run brew as the user who owns it (may differ from current user on macOS)
+run_brew() {
+  if ! has_cmd brew; then
+    log_error "brew not found"
+    return 1
+  fi
+
+  local brew_path
+  brew_path=$(which brew)
+  local brew_owner
+
+  # Get owner of brew binary (works on both macOS and Linux)
+  if [[ "$OS" == "macos" ]]; then
+    brew_owner=$(stat -f '%Su' "$brew_path" 2>/dev/null)
+  else
+    brew_owner=$(stat -c '%U' "$brew_path" 2>/dev/null)
+  fi
+
+  local current_user
+  current_user=$(whoami)
+
+  if [[ "$brew_owner" != "$current_user" && -n "$brew_owner" ]]; then
+    # Need to run as brew owner
+    log_info "Running brew as '$brew_owner' (brew owner)..."
+    if has_cmd sudo; then
+      sudo -u "$brew_owner" brew "$@"
+    else
+      log_warn "Cannot sudo to brew owner '$brew_owner'"
+      brew "$@"
+    fi
+  else
+    brew "$@"
+  fi
+}
+
 # Install package based on package manager
 install_pkg() {
   local pkg="$1"
@@ -127,7 +162,7 @@ install_pkg() {
       maybe_sudo yum install -y -q "$pkg_yum"
       ;;
     brew)
-      brew install "$pkg_brew"
+      run_brew install "$pkg_brew"
       ;;
     pacman)
       maybe_sudo pacman -S --noconfirm "$pkg_pacman"
@@ -178,7 +213,7 @@ install_gh() {
       maybe_sudo yum install -y -q gh
       ;;
     brew)
-      brew install gh
+      run_brew install gh
       ;;
     pacman)
       maybe_sudo pacman -S --noconfirm github-cli
@@ -253,7 +288,7 @@ install_node() {
       maybe_sudo yum install -y -q nodejs
       ;;
     brew)
-      brew install node
+      run_brew install node
       ;;
     pacman)
       maybe_sudo pacman -S --noconfirm nodejs npm
@@ -359,7 +394,7 @@ install_1password_cli() {
       ;;
     brew)
       # macOS - use Homebrew cask
-      brew install --cask 1password-cli
+      run_brew install --cask 1password-cli
       ;;
     pacman)
       # Arch Linux - available in community repo

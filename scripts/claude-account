@@ -21,6 +21,9 @@
 #
 # Environment Variables:
 #   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
+#   CLAUDE_CONFIG_DIR   Claude Code config directory (set by Claude Code in devcontainers)
+#                       If set: config at $CLAUDE_CONFIG_DIR/.claude.json
+#                       If not set: config at ~/.claude.json
 #
 # Storage Format in .env:
 #   CLAUDE_ACCOUNT_<EMAIL>_ACCESSTOKEN=sk-ant-oat01-...
@@ -31,8 +34,8 @@
 #   CLAUDE_ACCOUNT_<EMAIL>_ORGANIZATIONUUID=...
 #   CLAUDE_ACCOUNT_<EMAIL>_DISPLAYNAME=...
 #
-# Config: ~/.claude.json (account metadata)
-# Credentials: macOS Keychain / Linux ~/.claude/.credentials.json
+# Config: $CLAUDE_CONFIG_DIR/.claude.json or ~/.claude.json (account metadata)
+# Credentials: macOS Keychain / Linux $CLAUDE_CONFIG_DIR/.credentials.json
 #
 # Tip: Sync your .env to 1Password for persistence across devcontainer rebuilds
 
@@ -47,11 +50,24 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Files
-CLAUDE_CONFIG="${HOME}/.claude.json"
-CLAUDE_CREDENTIALS="${HOME}/.claude/.credentials.json"
+# Files - Claude Code config location depends on CLAUDE_CONFIG_DIR
+# If CLAUDE_CONFIG_DIR is set: $CLAUDE_CONFIG_DIR/.claude.json
+# Otherwise: ~/.claude.json (default)
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
+if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
+  CLAUDE_CONFIG="${CLAUDE_CONFIG_DIR}/.claude.json"
+  CLAUDE_CREDENTIALS="${CLAUDE_CONFIG_DIR}/.credentials.json"
+else
+  CLAUDE_CONFIG="${HOME}/.claude.json"
+  CLAUDE_CREDENTIALS="${HOME}/.claude/.credentials.json"
+fi
 ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
-EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
+# Exhaustion file goes in same directory as config
+if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
+  EXHAUSTION_FILE="${CLAUDE_CONFIG_DIR}/.account-exhaustion.json"
+else
+  EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
+fi
 
 # Keychain service name (macOS)
 KEYCHAIN_SERVICE="Claude Code-credentials"
@@ -127,12 +143,13 @@ parse_email_list() {
   done
 }
 
-# Get oauthAccount from ~/.claude.json
+# Get oauthAccount from config file
 get_oauth_account() {
-  if [[ ! -f "$CLAUDE_CONFIG" ]]; then
+  if [[ ! -f "$CLAUDE_CONFIG" ]] || [[ ! -s "$CLAUDE_CONFIG" ]]; then
     echo ""
     return
   fi
+
   jq -c '.oauthAccount // empty' "$CLAUDE_CONFIG" 2>/dev/null || echo ""
 }
 
@@ -421,7 +438,9 @@ capture_account() {
   oauth_account=$(get_oauth_account)
 
   if [[ -z "$oauth_account" ]]; then
-    echo -e "${RED}Error: No account found in ${CLAUDE_CONFIG}${NC}"
+    echo -e "${RED}Error: No account found in Claude Code config${NC}"
+    echo "Expected: ${CLAUDE_CONFIG}"
+    [[ -n "$CLAUDE_CONFIG_DIR" ]] && echo "  (CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR})"
     echo ""
     echo "Log in to Claude Code first with: claude"
     exit 1
@@ -600,6 +619,14 @@ switch_account() {
     exit 1
   fi
 
+  # Verify config file exists
+  if [[ ! -f "$CLAUDE_CONFIG" ]] || [[ ! -s "$CLAUDE_CONFIG" ]]; then
+    echo -e "${RED}Error: No Claude Code config file found${NC}"
+    echo "Expected: ${CLAUDE_CONFIG}"
+    [[ -n "$CLAUDE_CONFIG_DIR" ]] && echo "  (CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR})"
+    exit 1
+  fi
+
   # Backup current config
   local backup_file="${CLAUDE_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
   cp "$CLAUDE_CONFIG" "$backup_file"
@@ -631,7 +658,7 @@ switch_account() {
       organizationName: $organizationName
     }')
 
-  # Update ~/.claude.json
+  # Update Claude Code config file
   local temp_file
   temp_file=$(make_temp)
   jq --argjson new_account "$new_oauth_account" '.oauthAccount = $new_account' "$CLAUDE_CONFIG" > "$temp_file"

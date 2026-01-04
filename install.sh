@@ -326,6 +326,74 @@ install_playwright() {
   fi
 }
 
+# Install 1Password CLI (optional - for credential management)
+install_1password_cli() {
+  if has_cmd op; then
+    log_success "1Password CLI already installed ($(op --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+
+  log_info "Installing 1Password CLI (optional, for credential management)..."
+
+  case "$PKG_MGR" in
+    apt)
+      # Add 1Password GPG key and repository
+      maybe_sudo mkdir -p -m 755 /usr/share/keyrings
+      curl -sS https://downloads.1password.com/linux/keys/1password.asc | maybe_sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null || \
+        curl -sS https://downloads.1password.com/linux/keys/1password.asc | maybe_sudo tee /usr/share/keyrings/1password-archive-keyring.gpg > /dev/null
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" | maybe_sudo tee /etc/apt/sources.list.d/1password.list > /dev/null
+      maybe_sudo apt-get update -qq
+      maybe_sudo apt-get install -y -qq 1password-cli
+      ;;
+    dnf)
+      # Add 1Password RPM repository for Fedora/RHEL
+      maybe_sudo rpm --import https://downloads.1password.com/linux/keys/1password.asc
+      maybe_sudo sh -c 'echo -e "[1password]\nname=1Password Stable Channel\nbaseurl=https://downloads.1password.com/linux/rpm/stable/\$basearch\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://downloads.1password.com/linux/keys/1password.asc" > /etc/yum.repos.d/1password.repo'
+      maybe_sudo dnf install -y -q 1password-cli
+      ;;
+    yum)
+      # Add 1Password RPM repository for older RHEL/CentOS
+      maybe_sudo rpm --import https://downloads.1password.com/linux/keys/1password.asc
+      maybe_sudo sh -c 'echo -e "[1password]\nname=1Password Stable Channel\nbaseurl=https://downloads.1password.com/linux/rpm/stable/\$basearch\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=https://downloads.1password.com/linux/keys/1password.asc" > /etc/yum.repos.d/1password.repo'
+      maybe_sudo yum install -y -q 1password-cli
+      ;;
+    brew)
+      # macOS - use Homebrew cask
+      brew install --cask 1password-cli
+      ;;
+    pacman)
+      # Arch Linux - available in community repo
+      maybe_sudo pacman -S --noconfirm 1password-cli
+      ;;
+    apk)
+      # Alpine - need to download binary directly
+      log_info "Downloading 1Password CLI binary for Alpine..."
+      local arch
+      arch=$(uname -m)
+      case "$arch" in
+        x86_64) arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        armv7l) arch="arm" ;;
+      esac
+      curl -sSLo /tmp/op.zip "https://cache.agilebits.com/dist/1P/op2/pkg/v2.24.0/op_linux_${arch}_v2.24.0.zip"
+      maybe_sudo unzip -o /tmp/op.zip -d /usr/local/bin op
+      maybe_sudo chmod +x /usr/local/bin/op
+      rm -f /tmp/op.zip
+      ;;
+    *)
+      log_warn "Please install 1Password CLI manually: https://1password.com/downloads/command-line/"
+      return 1
+      ;;
+  esac
+
+  if has_cmd op; then
+    log_success "1Password CLI installed ($(op --version 2>/dev/null || echo 'installed'))"
+  else
+    log_warn "1Password CLI installation may require manual steps"
+    log_info "See: https://1password.com/downloads/command-line/"
+  fi
+}
+
 # Install Claude Code CLI via official installer
 install_claude_code() {
   if has_cmd claude; then
@@ -544,6 +612,7 @@ main() {
     check_gh_auth  # Check auth status after gh is installed
     install_uv
     install_node
+    install_1password_cli
     if [[ "$SKIP_PLAYWRIGHT" != "true" ]]; then
       install_playwright
     else

@@ -94,6 +94,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/plan-limit-account-switch.sh",
+            "timeout": 15
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-ci-before-stop.sh",
             "timeout": 30
           },

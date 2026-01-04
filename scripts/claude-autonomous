@@ -18,6 +18,8 @@
 #   WORK_EPIC            Same as --epic
 #   GITHUB_TOKEN         GitHub token for MCP servers (auto-fetched from gh if not set)
 #   MAX_CRASHES          Maximum crashes before giving up (default: 10)
+#   CLAUDE_ACCOUNT_COOLDOWN_MINUTES  Cooldown after account exhaustion (default: 5)
+#   CLAUDE_AUTONOMOUS_MAX_SWITCHES   Max account switches per session (default: 10)
 #
 # Note: Uses claude-opus-4-5-20251101 (Opus 4.5) as the default model
 #
@@ -41,6 +43,121 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+# Multi-account configuration
+MAX_ACCOUNT_SWITCHES="${CLAUDE_AUTONOMOUS_MAX_SWITCHES:-10}"
+ACCOUNT_SWITCH_COUNT=0
+
+# Find claude-account script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAUDE_ACCOUNT="${SCRIPT_DIR}/claude-account"
+
+# Check if claude-account is available
+has_multi_account_support() {
+  [[ -x "$CLAUDE_ACCOUNT" ]] || command -v claude-account &>/dev/null
+}
+
+# Get claude-account command
+get_claude_account_cmd() {
+  if [[ -x "$CLAUDE_ACCOUNT" ]]; then
+    echo "$CLAUDE_ACCOUNT"
+  elif command -v claude-account &>/dev/null; then
+    echo "claude-account"
+  else
+    echo ""
+  fi
+}
+
+# Check if output indicates plan limit was hit
+detect_plan_limit_in_output() {
+  local output="$1"
+  local patterns=(
+    "Plan limit reached"
+    "rate.limit"
+    "quota.exceeded"
+    "usage.limit"
+    "capacity.limit"
+    "too.many.requests"
+    "Switching to account"
+    "All accounts exhausted"
+    "limit.reached"
+    "exceeded.your"
+  )
+
+  for pattern in "${patterns[@]}"; do
+    if echo "$output" | grep -qiE "$pattern"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Try to switch to next available account
+try_switch_account() {
+  local cmd
+  cmd=$(get_claude_account_cmd)
+
+  if [[ -z "$cmd" ]]; then
+    echo -e "${YELLOW}Multi-account support not available${NC}" >&2
+    return 1
+  fi
+
+  # Check switch limit
+  if [[ $ACCOUNT_SWITCH_COUNT -ge $MAX_ACCOUNT_SWITCHES ]]; then
+    echo -e "${RED}Maximum account switches ($MAX_ACCOUNT_SWITCHES) reached${NC}" >&2
+    return 1
+  fi
+
+  # Get next available account
+  local next_account
+  if ! next_account=$("$cmd" next 2>/dev/null); then
+    echo -e "${YELLOW}No available accounts to switch to${NC}" >&2
+    return 1
+  fi
+
+  # Mark current as exhausted and switch
+  echo -e "${YELLOW}Plan limit detected. Switching accounts...${NC}"
+  "$cmd" mark-exhausted 2>/dev/null || true
+
+  if "$cmd" switch "$next_account" 2>/dev/null; then
+    ACCOUNT_SWITCH_COUNT=$((ACCOUNT_SWITCH_COUNT + 1))
+    echo -e "${GREEN}Switched to: ${next_account}${NC}"
+    echo -e "${BLUE}Account switches this session: ${ACCOUNT_SWITCH_COUNT}/${MAX_ACCOUNT_SWITCHES}${NC}"
+    return 0
+  else
+    echo -e "${RED}Failed to switch account${NC}" >&2
+    return 1
+  fi
+}
+
+# Wait for account cooldown
+wait_for_account_cooldown() {
+  local cmd
+  cmd=$(get_claude_account_cmd)
+  local cooldown_minutes="${CLAUDE_ACCOUNT_COOLDOWN_MINUTES:-5}"
+  local seconds=$((cooldown_minutes * 60))
+
+  echo -e "${YELLOW}All accounts exhausted. Waiting ${cooldown_minutes} minutes for cooldown...${NC}"
+  echo ""
+
+  while [[ $seconds -gt 0 ]]; do
+    local mins=$((seconds / 60))
+    local secs=$((seconds % 60))
+    printf "\r${BLUE}Resuming in: %02d:%02d${NC}  " "$mins" "$secs"
+    sleep 1
+    ((seconds--))
+  done
+
+  echo ""
+  echo -e "${GREEN}Cooldown complete. Resetting exhaustion statuses...${NC}"
+
+  if [[ -n "$cmd" ]]; then
+    "$cmd" reset-exhausted 2>/dev/null || true
+  fi
+
+  # Reset switch count after cooldown
+  ACCOUNT_SWITCH_COUNT=0
+}
 
 # Signal handling: Ignore signals to parent so only Claude (child) receives them
 # This allows our crash recovery loops to catch Claude's exit and restart
@@ -685,6 +802,24 @@ echo -e "${BLUE}Branch:${NC}       ${DEFAULT_BRANCH}"
 echo -e "${BLUE}Worktree:${NC}     ${WORKTREE_DIR}"
 echo -e "${BLUE}GitHub Token:${NC} ${GREEN}✓ Set${NC}"
 echo -e "${BLUE}Max Crashes:${NC}  ${MAX_CRASHES}"
+
+# Show multi-account status if available
+if has_multi_account_support; then
+  ACCOUNT_CMD=$(get_claude_account_cmd)
+  if [[ -n "$ACCOUNT_CMD" ]]; then
+    CURRENT_ACCOUNT=$("$ACCOUNT_CMD" current 2>/dev/null || echo "unknown")
+    AVAILABLE_COUNT=$("$ACCOUNT_CMD" list --available 2>/dev/null | wc -l | tr -d ' ')
+    TOTAL_COUNT=$("$ACCOUNT_CMD" list 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "${BLUE}Account:${NC}      ${CURRENT_ACCOUNT}"
+    if [[ "$AVAILABLE_COUNT" -gt 0 ]]; then
+      echo -e "${BLUE}Accounts:${NC}     ${GREEN}${AVAILABLE_COUNT}/${TOTAL_COUNT} available${NC}"
+    else
+      echo -e "${BLUE}Accounts:${NC}     ${YELLOW}${TOTAL_COUNT} total (cooldown status unknown)${NC}"
+    fi
+    echo -e "${BLUE}Max Switches:${NC} ${MAX_ACCOUNT_SWITCHES} per session"
+  fi
+fi
+
 if [[ "$NEW_MODE" == "true" ]]; then
   echo -e "${BLUE}Mode:${NC}         ${CYAN}Interactive (waiting for instructions)${NC}"
 elif [[ -n "$EPIC" ]]; then
@@ -823,12 +958,33 @@ while true; do
     break
   fi
 
-  # Any non-zero exit (crash, OOM, killed) triggers recovery
+  # Any non-zero exit (crash, OOM, killed, plan limit) triggers recovery
   NOW=$(date +%s)
   CRASH_TIMES+=("$NOW")
   TOTAL_CRASHES=$((TOTAL_CRASHES + 1))
 
   echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
+
+  # Check if exit might be due to plan limits (try account switch first)
+  if has_multi_account_support; then
+    # Check if current account is marked as exhausted (by Stop hook or explicit)
+    ACCOUNT_CMD=$(get_claude_account_cmd)
+    if [[ -n "$ACCOUNT_CMD" ]] && "$ACCOUNT_CMD" is-exhausted 2>/dev/null; then
+      echo -e "${YELLOW}Account marked as exhausted (plan limit likely reached)${NC}"
+
+      if try_switch_account; then
+        # Successfully switched - reset crash count and continue
+        MSG="Plan limit reached on previous account. Account switched successfully. Continue your work autonomously."
+        sleep 2
+        continue
+      else
+        # No accounts available - wait for cooldown
+        wait_for_account_cooldown
+        MSG="Plan limit cooldown complete. Resuming autonomous work."
+        continue
+      fi
+    fi
+  fi
 
   # Check max crash limit
   if (( TOTAL_CRASHES >= MAX_CRASHES )); then

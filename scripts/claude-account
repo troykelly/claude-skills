@@ -8,10 +8,16 @@
 # Commands:
 #   capture             Save current account to .env (credentials + metadata)
 #   list                Show all saved accounts
+#   list --available    Show only accounts not exhausted/in cooldown
 #   current             Show current active account
 #   switch              Rotate to next account
 #   switch <email>      Switch to specific account by email
 #   remove [-f] <email> Remove a saved account from .env
+#   next                Print next available account (for scripts)
+#   mark-exhausted      Mark current account as plan-limit exhausted
+#   reset-exhausted     Reset all exhaustion statuses
+#   is-exhausted        Exit 0 if current account is exhausted, 1 otherwise
+#   status              Show exhaustion status of all accounts
 #
 # Environment Variables:
 #   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
@@ -45,9 +51,13 @@ NC='\033[0m'
 CLAUDE_CONFIG="${HOME}/.claude.json"
 CLAUDE_CREDENTIALS="${HOME}/.claude/.credentials.json"
 ENV_FILE="${CLAUDE_ENV_FILE:-./.env}"
+EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
 
 # Keychain service name (macOS)
 KEYCHAIN_SERVICE="Claude Code-credentials"
+
+# Exhaustion tracking configuration
+COOLDOWN_MINUTES="${CLAUDE_ACCOUNT_COOLDOWN_MINUTES:-5}"
 
 # Temp file tracking for cleanup
 TEMP_FILES=()
@@ -681,9 +691,266 @@ remove_account() {
   echo -e "${GREEN}Removed account:${NC} ${target_email}"
 }
 
+# Initialize exhaustion tracking file
+init_exhaustion_file() {
+  if [[ ! -f "$EXHAUSTION_FILE" ]]; then
+    mkdir -p "$(dirname "$EXHAUSTION_FILE")"
+    cat > "$EXHAUSTION_FILE" << EOF
+{
+  "exhausted": {},
+  "switches": [],
+  "cooldown_minutes": $COOLDOWN_MINUTES
+}
+EOF
+    chmod 600 "$EXHAUSTION_FILE"
+  fi
+}
+
+# Check if an account has cooled down from exhaustion
+is_account_cooled_down() {
+  local email="$1"
+
+  init_exhaustion_file
+
+  local exhausted_at
+  exhausted_at=$(jq -r --arg email "$email" '.exhausted[$email] // empty' "$EXHAUSTION_FILE" 2>/dev/null)
+
+  if [[ -z "$exhausted_at" ]]; then
+    return 0  # Not exhausted, so "cooled down"
+  fi
+
+  # Convert ISO timestamp to epoch
+  local exhausted_epoch now cooldown_seconds
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    exhausted_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$exhausted_at" +%s 2>/dev/null || echo 0)
+  else
+    exhausted_epoch=$(date -d "$exhausted_at" +%s 2>/dev/null || echo 0)
+  fi
+
+  now=$(date +%s)
+  cooldown_seconds=$((COOLDOWN_MINUTES * 60))
+
+  [[ $((now - exhausted_epoch)) -ge $cooldown_seconds ]]
+}
+
+# Mark an account as exhausted
+mark_account_exhausted() {
+  local email="${1:-$(get_current_email)}"
+
+  if [[ -z "$email" ]]; then
+    echo -e "${RED}Error: No account specified and no current account found${NC}"
+    exit 1
+  fi
+
+  init_exhaustion_file
+
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  local tmp_file
+  tmp_file=$(make_temp)
+  jq --arg email "$email" --arg ts "$timestamp" \
+    '.exhausted[$email] = $ts' "$EXHAUSTION_FILE" > "$tmp_file"
+  mv "$tmp_file" "$EXHAUSTION_FILE"
+
+  echo -e "${YELLOW}Marked as exhausted:${NC} ${email}"
+  echo -e "${BLUE}Cooldown:${NC} ${COOLDOWN_MINUTES} minutes"
+}
+
+# Reset all exhaustion statuses
+reset_exhausted() {
+  init_exhaustion_file
+
+  local tmp_file
+  tmp_file=$(make_temp)
+  jq '.exhausted = {} | .switches = []' "$EXHAUSTION_FILE" > "$tmp_file"
+  mv "$tmp_file" "$EXHAUSTION_FILE"
+
+  echo -e "${GREEN}Reset all exhaustion statuses${NC}"
+}
+
+# Check if current account is exhausted
+check_is_exhausted() {
+  local current_email
+  current_email=$(get_current_email)
+
+  if [[ -z "$current_email" ]]; then
+    echo -e "${RED}Error: No current account found${NC}" >&2
+    exit 1
+  fi
+
+  if is_account_cooled_down "$current_email"; then
+    exit 1  # Not exhausted (or cooled down)
+  else
+    exit 0  # Still exhausted
+  fi
+}
+
+# Get next available account (not exhausted or cooled down)
+get_next_available_account() {
+  local current_email
+  current_email=$(get_current_email)
+
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    return 1
+  fi
+
+  local emails
+  parse_email_list "$accounts_list" emails
+
+  # Find next available account (round-robin from current)
+  local found_current=false
+  local candidate=""
+
+  # First pass: find accounts after current
+  for email in "${emails[@]}"; do
+    if [[ "$found_current" == "true" ]]; then
+      if [[ "$email" != "$current_email" ]] && is_account_cooled_down "$email"; then
+        candidate="$email"
+        break
+      fi
+    fi
+    if [[ "$email" == "$current_email" ]]; then
+      found_current=true
+    fi
+  done
+
+  # Second pass: wrap around to beginning
+  if [[ -z "$candidate" ]]; then
+    for email in "${emails[@]}"; do
+      if [[ "$email" == "$current_email" ]]; then
+        break
+      fi
+      if is_account_cooled_down "$email"; then
+        candidate="$email"
+        break
+      fi
+    done
+  fi
+
+  if [[ -n "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+# Print next available account for scripts
+print_next_account() {
+  local next
+  if next=$(get_next_available_account); then
+    echo "$next"
+  else
+    echo -e "${RED}No available accounts${NC}" >&2
+    exit 1
+  fi
+}
+
+# Show exhaustion status of all accounts
+show_exhaustion_status() {
+  init_exhaustion_file
+
+  local accounts_list
+  accounts_list=$(get_accounts_list)
+
+  if [[ -z "$accounts_list" ]]; then
+    echo -e "${YELLOW}No accounts found in environment${NC}"
+    return
+  fi
+
+  local current_email
+  current_email=$(get_current_email)
+
+  echo -e "${CYAN}Account Exhaustion Status:${NC}"
+  echo ""
+
+  local emails
+  parse_email_list "$accounts_list" emails
+
+  for email in "${emails[@]}"; do
+    local exhausted_at status_icon status_text remaining
+
+    exhausted_at=$(jq -r --arg email "$email" '.exhausted[$email] // empty' "$EXHAUSTION_FILE" 2>/dev/null)
+
+    if [[ -z "$exhausted_at" ]]; then
+      status_icon="${GREEN}*${NC}"
+      status_text="${GREEN}available${NC}"
+    elif is_account_cooled_down "$email"; then
+      status_icon="${GREEN}*${NC}"
+      status_text="${GREEN}cooled down${NC}"
+    else
+      status_icon="${RED}!${NC}"
+      # Calculate remaining cooldown
+      local exhausted_epoch now elapsed remaining_secs remaining_mins
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        exhausted_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$exhausted_at" +%s 2>/dev/null || echo 0)
+      else
+        exhausted_epoch=$(date -d "$exhausted_at" +%s 2>/dev/null || echo 0)
+      fi
+      now=$(date +%s)
+      elapsed=$((now - exhausted_epoch))
+      remaining_secs=$((COOLDOWN_MINUTES * 60 - elapsed))
+      remaining_mins=$(( (remaining_secs + 59) / 60 ))  # Round up
+      status_text="${RED}exhausted${NC} (${remaining_mins}m remaining)"
+    fi
+
+    if [[ "$email" == "$current_email" ]]; then
+      echo -e "  ${status_icon} ${BOLD}${email}${NC} ${BLUE}(current)${NC} - ${status_text}"
+    else
+      echo -e "  ${status_icon} ${email} - ${status_text}"
+    fi
+  done
+
+  echo ""
+  echo -e "${BLUE}Cooldown period:${NC} ${COOLDOWN_MINUTES} minutes"
+}
+
+# List accounts with --available filter
+list_accounts_filtered() {
+  local show_available_only=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --available|-a)
+        show_available_only=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [[ "$show_available_only" == "true" ]]; then
+    # Just print available account emails (for scripts)
+    local accounts_list
+    accounts_list=$(get_accounts_list)
+
+    if [[ -z "$accounts_list" ]]; then
+      return
+    fi
+
+    local emails
+    parse_email_list "$accounts_list" emails
+
+    for email in "${emails[@]}"; do
+      if is_account_cooled_down "$email"; then
+        echo "$email"
+      fi
+    done
+  else
+    # Normal list display
+    list_accounts
+  fi
+}
+
 # Show help
 show_help() {
-  head -35 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
+  head -45 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
 }
 
 # Main
@@ -698,7 +965,7 @@ main() {
       capture_account
       ;;
     list|ls)
-      list_accounts
+      list_accounts_filtered "$@"
       ;;
     current)
       show_current
@@ -708,6 +975,21 @@ main() {
       ;;
     remove|rm)
       remove_account "$@"
+      ;;
+    next)
+      print_next_account
+      ;;
+    mark-exhausted)
+      mark_account_exhausted "${1:-}"
+      ;;
+    reset-exhausted)
+      reset_exhausted
+      ;;
+    is-exhausted)
+      check_is_exhausted
+      ;;
+    status)
+      show_exhaustion_status
       ;;
     -h|--help|help|"")
       show_help

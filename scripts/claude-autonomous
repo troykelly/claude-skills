@@ -57,8 +57,10 @@ NC='\033[0m'
 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
 if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
   CLAUDE_PROJECTS_DIR="${CLAUDE_CONFIG_DIR}/projects"
+  CLAUDE_STATE_DIR="${CLAUDE_CONFIG_DIR}"
 else
   CLAUDE_PROJECTS_DIR="${HOME}/.claude/projects"
+  CLAUDE_STATE_DIR="${HOME}/.claude"
 fi
 
 # Multi-account configuration
@@ -1180,8 +1182,8 @@ while true; do
   echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
 
   # Check if the Stop hook already performed an account switch
-  # (Hook writes session-specific file ~/.claude/.pending-account-switch.${SESSION_ID})
-  PENDING_SWITCH_FILE="${HOME}/.claude/.pending-account-switch.${SESSION_ID}"
+  # (Hook writes session-specific file to CLAUDE_STATE_DIR)
+  PENDING_SWITCH_FILE="${CLAUDE_STATE_DIR}/.pending-account-switch.${SESSION_ID}"
   if [[ -f "$PENDING_SWITCH_FILE" ]]; then
     SWITCH_TO=$(jq -r '.to // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
     SWITCH_FROM=$(jq -r '.from // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
@@ -1203,8 +1205,8 @@ while true; do
   fi
 
   # Check if hook signaled sleep mode (all accounts exhausted)
-  # (Hook writes session-specific file ~/.claude/.account-sleep-mode.${SESSION_ID})
-  SLEEP_FILE="${HOME}/.claude/.account-sleep-mode.${SESSION_ID}"
+  # (Hook writes session-specific file to CLAUDE_STATE_DIR)
+  SLEEP_FILE="${CLAUDE_STATE_DIR}/.account-sleep-mode.${SESSION_ID}"
   if [[ -f "$SLEEP_FILE" ]]; then
     COOLDOWN_MINS=$(jq -r '.cooldown_minutes // 5' "$SLEEP_FILE" 2>/dev/null)
     rm -f "$SLEEP_FILE"

@@ -28,9 +28,11 @@ CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
 if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
   CLAUDE_CONFIG="${CLAUDE_CONFIG_DIR}/.claude.json"
   EXHAUSTION_FILE="${CLAUDE_CONFIG_DIR}/.account-exhaustion.json"
+  STATE_DIR="${CLAUDE_CONFIG_DIR}"
 else
   CLAUDE_CONFIG="${HOME}/.claude.json"
   EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
+  STATE_DIR="${HOME}/.claude"
 fi
 
 # Configuration
@@ -419,7 +421,7 @@ main() {
       # Write switch state for claude-autonomous to detect (session-specific)
       local session_suffix
       session_suffix=$(get_session_suffix)
-      local switch_file="${HOME}/.claude/.pending-account-switch${session_suffix}"
+      local switch_file="${STATE_DIR}/.pending-account-switch${session_suffix}"
       mkdir -p "$(dirname "$switch_file")"
       jq -n \
         --arg from "$current_email" \
@@ -438,7 +440,7 @@ main() {
       # Write sleep state for claude-autonomous to detect (session-specific)
       local session_suffix
       session_suffix=$(get_session_suffix)
-      local sleep_file="${HOME}/.claude/.account-sleep-mode${session_suffix}"
+      local sleep_file="${STATE_DIR}/.account-sleep-mode${session_suffix}"
       mkdir -p "$(dirname "$sleep_file")"
       jq -n \
         --arg account "$current_email" \

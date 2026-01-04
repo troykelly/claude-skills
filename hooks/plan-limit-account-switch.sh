@@ -324,31 +324,53 @@ main() {
         exit 0
       fi
 
-      # Output block decision with switch instructions
-      # The reason will be shown to Claude and guide its next action
-      jq -n \
-        --arg current "$current_email" \
-        --arg next "$next_account" \
-        '{
-          "decision": "block",
-          "reason": ("Plan limit reached on " + $current + ". Switching to account: " + $next + ". Please run: claude-account switch " + $next + " && echo \"Account switched. Continuing work...\" Then continue with the current task."),
-          "systemMessage": ("Plan limit hit - switching from " + $current + " to " + $next)
-        }'
+      # Perform the actual account switch NOW
+      # Claude CLI must exit and restart to use new credentials (they're loaded at startup)
+      local claude_account_cmd=""
+      if command -v claude-account &>/dev/null; then
+        claude_account_cmd="claude-account"
+      elif [[ -x "/usr/local/bin/claude-account" ]]; then
+        claude_account_cmd="/usr/local/bin/claude-account"
+      fi
 
+      if [[ -n "$claude_account_cmd" ]]; then
+        # Switch account credentials - this updates ~/.claude.json
+        if "$claude_account_cmd" switch "$next_account" &>/dev/null; then
+          echo "Plan limit on $current_email. Switched credentials to $next_account." >&2
+          echo "Claude must restart to use new credentials. Use --resume to continue." >&2
+        else
+          echo "Failed to switch to $next_account. Manual intervention required." >&2
+        fi
+      else
+        echo "claude-account not found. Manual switch required: claude-account switch $next_account" >&2
+      fi
+
+      # Write switch state for claude-autonomous to detect
+      local switch_file="${HOME}/.claude/.pending-account-switch"
+      mkdir -p "$(dirname "$switch_file")"
+      jq -n \
+        --arg from "$current_email" \
+        --arg to "$next_account" \
+        --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        '{from: $from, to: $to, timestamp: $ts, reason: "plan_limit"}' > "$switch_file"
+
+      # ALLOW the stop - Claude must exit and restart with new credentials
+      # Do NOT block - blocking keeps the old credentials active
       exit 0
     else
       # No available accounts - allow stop, enter SLEEP mode
       echo "Plan limit reached. No available accounts to switch to. All accounts exhausted or in cooldown." >&2
 
-      # Output message for user
+      # Write sleep state for claude-autonomous to detect
+      local sleep_file="${HOME}/.claude/.account-sleep-mode"
+      mkdir -p "$(dirname "$sleep_file")"
       jq -n \
-        --arg current "$current_email" \
-        '{
-          "decision": "block",
-          "reason": ("Plan limit reached on all accounts. Entering SLEEP mode. To resume: wait for cooldown (" + (env.CLAUDE_ACCOUNT_COOLDOWN_MINUTES // "5") + " minutes) or add more accounts with claude-account capture."),
-          "systemMessage": "All accounts exhausted - entering SLEEP"
-        }'
+        --arg account "$current_email" \
+        --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        --argjson cooldown "$COOLDOWN_MINUTES" \
+        '{exhausted_account: $account, timestamp: $ts, cooldown_minutes: $cooldown, reason: "all_accounts_exhausted"}' > "$sleep_file"
 
+      # ALLOW the stop - no point blocking if all accounts are exhausted
       exit 0
     fi
   fi

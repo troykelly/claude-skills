@@ -1173,12 +1173,48 @@ while true; do
 
   # Any non-zero exit (crash, OOM, killed, plan limit) triggers recovery
   NOW=$(date +%s)
-  CRASH_TIMES+=("$NOW")
-  TOTAL_CRASHES=$((TOTAL_CRASHES + 1))
 
   echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
 
-  # Check if exit might be due to plan limits (try account switch first)
+  # Check if the Stop hook already performed an account switch
+  # (Hook writes ~/.claude/.pending-account-switch when it switches)
+  PENDING_SWITCH_FILE="${HOME}/.claude/.pending-account-switch"
+  if [[ -f "$PENDING_SWITCH_FILE" ]]; then
+    SWITCH_TO=$(jq -r '.to // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
+    SWITCH_FROM=$(jq -r '.from // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
+    rm -f "$PENDING_SWITCH_FILE"
+
+    if [[ -n "$SWITCH_TO" ]]; then
+      echo -e "${GREEN}Account switched by hook: ${SWITCH_FROM} → ${SWITCH_TO}${NC}"
+      ACCOUNT_SWITCHES=$((ACCOUNT_SWITCHES + 1))
+
+      if (( ACCOUNT_SWITCHES >= MAX_ACCOUNT_SWITCHES )); then
+        echo -e "${RED}Maximum account switches ($MAX_ACCOUNT_SWITCHES) reached${NC}" >&2
+        exit 1
+      fi
+
+      MSG="Plan limit reached on ${SWITCH_FROM}. Now using ${SWITCH_TO}. Continue your work autonomously."
+      sleep 2
+      continue
+    fi
+  fi
+
+  # Check if hook signaled sleep mode (all accounts exhausted)
+  SLEEP_FILE="${HOME}/.claude/.account-sleep-mode"
+  if [[ -f "$SLEEP_FILE" ]]; then
+    COOLDOWN_MINS=$(jq -r '.cooldown_minutes // 5' "$SLEEP_FILE" 2>/dev/null)
+    rm -f "$SLEEP_FILE"
+    echo -e "${YELLOW}All accounts exhausted. Waiting ${COOLDOWN_MINS} minutes for cooldown...${NC}"
+    sleep $((COOLDOWN_MINS * 60))
+    MSG="Plan limit cooldown complete. Resuming autonomous work."
+    continue
+  fi
+
+  # Track crashes (only if not a hook-handled account switch)
+  CRASH_TIMES+=("$NOW")
+  TOTAL_CRASHES=$((TOTAL_CRASHES + 1))
+
+  # Check if exit might be due to plan limits (fallback if hook didn't handle it)
   if has_multi_account_support; then
     # Check if current account is marked as exhausted (by Stop hook or explicit)
     ACCOUNT_CMD=$(get_claude_account_cmd)

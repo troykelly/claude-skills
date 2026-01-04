@@ -1,6 +1,6 @@
 # Issue-Driven Development
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/troykelly/claude-skills)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/troykelly/claude-skills)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Skills](https://img.shields.io/badge/skills-51-purple.svg)](#skills-reference)
 [![Agents](https://img.shields.io/badge/agents-9-orange.svg)](#agents)
@@ -90,16 +90,19 @@ Specialized agents for specific tasks:
 
 ## Multi-Account Management
 
-The `claude-account` tool lets you switch between Claude accounts without re-authenticating each time.
+The `claude-account` tool lets you switch between Claude accounts without re-authenticating each time. When running autonomously, the plugin automatically switches accounts when plan limits are reached.
 
 ### Commands
 
 ```bash
 claude-account capture           # Save current logged-in account
 claude-account list              # Show all saved accounts
+claude-account list --available  # Show accounts not in cooldown
 claude-account current           # Show active account
 claude-account switch            # Rotate to next account
 claude-account switch <email>    # Switch to specific account
+claude-account next              # Print next available account (for scripts)
+claude-account status            # Show exhaustion status of all accounts
 claude-account remove <email>    # Remove saved account
 ```
 
@@ -133,6 +136,41 @@ CLAUDE_ACCOUNT_USER_EXAMPLE_COM_ACCESSTOKEN="sk-ant-oat01-..."
 CLAUDE_ACCOUNT_USER_EXAMPLE_COM_REFRESHTOKEN="sk-ant-ort01-..."
 # ... additional fields per account
 ```
+
+### Automatic Plan Limit Switching
+
+When running with `claude-autonomous`, the plugin automatically detects plan limits and switches accounts:
+
+1. **Detection**: A Stop hook monitors for plan limit patterns (rate limit, quota exceeded, 429 errors, etc.)
+2. **Mark Exhausted**: The current account is marked as exhausted with a timestamp
+3. **Switch**: Automatically rotates to the next available account (round-robin)
+4. **Resume**: Work continues with the new account
+5. **Cooldown**: Exhausted accounts become available again after 5 minutes (configurable)
+
+**Session startup shows account status:**
+
+```
+Checking Claude account status...
+  ✓ Current account: user@example.com
+  ✓ Multi-account switching: enabled
+  │ Total accounts: 3
+  │ Available (not exhausted): 3
+
+  Account switch order:
+    user@example.com (current)
+    → second@example.com → third@example.com
+```
+
+**Environment variables:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CLAUDE_ACCOUNT_COOLDOWN_MINUTES` | `5` | Minutes before exhausted account is available again |
+| `CLAUDE_AUTONOMOUS_MAX_SWITCHES` | `10` | Maximum account switches per session |
+| `CLAUDE_ACCOUNT_FLAP_THRESHOLD` | `3` | Switches before flap detection triggers |
+| `CLAUDE_ACCOUNT_FLAP_WINDOW` | `60` | Seconds for flap detection window |
+
+**Flap protection**: If all accounts are exhausted (rapid switching detected), the system waits for cooldown before continuing.
 
 ---
 
@@ -694,6 +732,8 @@ These override any other instructions:
 | No origin remote | Add: `git remote add origin <url>` |
 | Plugin not loading | Restart Claude Code after installation |
 | Account switch fails | Re-run `claude-account capture` after fresh `/login` |
+| Multi-account disabled | Run `install.sh` to install `claude-account` to PATH |
+| All accounts exhausted | Wait for cooldown or add more accounts with `claude-account capture` |
 
 <details>
 <summary><strong>MCP Server Installation</strong></summary>

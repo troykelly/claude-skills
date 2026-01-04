@@ -807,9 +807,19 @@ echo -e "${BLUE}Max Crashes:${NC}  ${MAX_CRASHES}"
 if has_multi_account_support; then
   ACCOUNT_CMD=$(get_claude_account_cmd)
   if [[ -n "$ACCOUNT_CMD" ]]; then
-    CURRENT_ACCOUNT=$("$ACCOUNT_CMD" current 2>/dev/null || echo "unknown")
-    AVAILABLE_COUNT=$("$ACCOUNT_CMD" list --available 2>/dev/null | wc -l | tr -d ' ')
-    TOTAL_COUNT=$("$ACCOUNT_CMD" list 2>/dev/null | wc -l | tr -d ' ')
+    # Extract email from current output (handles formatted output)
+    CURRENT_OUTPUT=$("$ACCOUNT_CMD" current 2>/dev/null || echo "")
+    CURRENT_ACCOUNT=$(echo "$CURRENT_OUTPUT" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1)
+    [[ -z "$CURRENT_ACCOUNT" ]] && CURRENT_ACCOUNT="unknown"
+
+    # Count available accounts (--available outputs just emails)
+    AVAILABLE_COUNT=$("$ACCOUNT_CMD" list --available 2>/dev/null | grep -c '@' || echo "0")
+
+    # Get total from "Total: N account(s)" line
+    TOTAL_LINE=$("$ACCOUNT_CMD" list 2>/dev/null | grep "^Total:" || echo "")
+    TOTAL_COUNT=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+' | head -1)
+    [[ -z "$TOTAL_COUNT" ]] && TOTAL_COUNT="$AVAILABLE_COUNT"
+
     echo -e "${BLUE}Account:${NC}      ${CURRENT_ACCOUNT}"
     if [[ "$AVAILABLE_COUNT" -gt 0 ]]; then
       echo -e "${BLUE}Accounts:${NC}     ${GREEN}${AVAILABLE_COUNT}/${TOTAL_COUNT} available${NC}"

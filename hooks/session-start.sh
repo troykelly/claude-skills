@@ -105,19 +105,24 @@ elif command -v claude-account &> /dev/null; then
 fi
 
 if [ -n "$CLAUDE_ACCOUNT" ]; then
-    # Get current account
-    CURRENT_ACCOUNT=$("$CLAUDE_ACCOUNT" current 2>/dev/null || echo "")
+    # Get current account - extract just the email from the output
+    CURRENT_OUTPUT=$("$CLAUDE_ACCOUNT" current 2>/dev/null || echo "")
+    # Extract email address from output (handles both "email" and formatted output)
+    CURRENT_ACCOUNT=$(echo "$CURRENT_OUTPUT" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -1)
 
     if [ -n "$CURRENT_ACCOUNT" ]; then
         echo -e "  ${GREEN}✓${NC} Current account: ${CURRENT_ACCOUNT}"
 
-        # Get all accounts and available accounts
-        ALL_ACCOUNTS=$("$CLAUDE_ACCOUNT" list 2>/dev/null || echo "")
+        # Get available accounts (--available outputs just emails, one per line)
         AVAILABLE_ACCOUNTS=$("$CLAUDE_ACCOUNT" list --available 2>/dev/null || echo "")
 
-        # Count accounts
-        TOTAL_COUNT=$(echo "$ALL_ACCOUNTS" | grep -c '@' 2>/dev/null || echo "0")
+        # Count by counting non-empty lines from --available output
         AVAILABLE_COUNT=$(echo "$AVAILABLE_ACCOUNTS" | grep -c '@' 2>/dev/null || echo "0")
+
+        # Get total from "Total: N account(s)" line in list output
+        TOTAL_LINE=$("$CLAUDE_ACCOUNT" list 2>/dev/null | grep "^Total:" || echo "")
+        TOTAL_COUNT=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+' | head -1)
+        [ -z "$TOTAL_COUNT" ] && TOTAL_COUNT="$AVAILABLE_COUNT"
 
         if [ "$TOTAL_COUNT" -gt 1 ]; then
             echo -e "  ${GREEN}✓${NC} Multi-account switching: enabled"
@@ -126,6 +131,11 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
             if [ "$AVAILABLE_COUNT" -gt 0 ]; then
                 echo -e "  ${BLUE}│${NC} Available (not exhausted): ${AVAILABLE_COUNT}"
             fi
+
+            # Get all account emails for switch order display
+            # Use --available output format (just emails) but we need ALL accounts
+            # Parse from list output - extract lines that look like email addresses at start
+            ALL_EMAILS=$("$CLAUDE_ACCOUNT" list 2>/dev/null | grep -E '^\s{0,4}[a-zA-Z0-9._%+-]+@' | sed 's/^[[:space:]]*//' | cut -d' ' -f1)
 
             # Show switch order (accounts other than current)
             echo ""
@@ -136,6 +146,8 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
             # First pass: accounts after current
             while IFS= read -r account; do
                 [ -z "$account" ] && continue
+                # Clean any trailing characters
+                account=$(echo "$account" | tr -d '\r')
                 if [ "$FOUND_CURRENT" = "true" ]; then
                     if [ -n "$SWITCH_ORDER" ]; then
                         SWITCH_ORDER="$SWITCH_ORDER → $account"
@@ -146,11 +158,12 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
                 if [ "$account" = "$CURRENT_ACCOUNT" ]; then
                     FOUND_CURRENT=true
                 fi
-            done <<< "$ALL_ACCOUNTS"
+            done <<< "$ALL_EMAILS"
 
             # Second pass: accounts before current (wrap around)
             while IFS= read -r account; do
                 [ -z "$account" ] && continue
+                account=$(echo "$account" | tr -d '\r')
                 if [ "$account" = "$CURRENT_ACCOUNT" ]; then
                     break
                 fi
@@ -159,7 +172,7 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
                 else
                     SWITCH_ORDER="$account"
                 fi
-            done <<< "$ALL_ACCOUNTS"
+            done <<< "$ALL_EMAILS"
 
             if [ -n "$SWITCH_ORDER" ]; then
                 echo -e "    ${CURRENT_ACCOUNT} (current)"

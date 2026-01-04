@@ -136,12 +136,50 @@ get_oauth_account() {
   jq -c '.oauthAccount // empty' "$CLAUDE_CONFIG" 2>/dev/null || echo ""
 }
 
-# Get current email from ~/.claude.json
+# Get current email from ~/.claude.json or credentials
 get_current_email() {
-  local account
+  local account email
   account=$(get_oauth_account)
   if [[ -n "$account" ]]; then
-    echo "$account" | jq -r '.emailAddress // empty'
+    email=$(echo "$account" | jq -r '.emailAddress // empty')
+    if [[ -n "$email" ]]; then
+      echo "$email"
+      return
+    fi
+  fi
+
+  # Fallback: try to get from credentials file (Linux/devcontainer)
+  if [[ -f "$CLAUDE_CREDENTIALS" ]]; then
+    # Some credential formats may contain email in different locations
+    email=$(jq -r '.claudeAiOauth.email // .email // empty' "$CLAUDE_CREDENTIALS" 2>/dev/null)
+    if [[ -n "$email" ]]; then
+      echo "$email"
+      return
+    fi
+  fi
+
+  # Final fallback: check if any saved account matches current credentials
+  local creds access_token
+  creds=$(get_credentials)
+  if [[ -n "$creds" ]]; then
+    access_token=$(echo "$creds" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+    if [[ -n "$access_token" ]]; then
+      # Check saved accounts for matching token
+      local accounts_list
+      accounts_list=$(get_accounts_list)
+      if [[ -n "$accounts_list" ]]; then
+        local emails
+        parse_email_list "$accounts_list" emails
+        for saved_email in "${emails[@]}"; do
+          local saved_token
+          saved_token=$(get_account_field "$saved_email" "ACCESSTOKEN")
+          if [[ "$saved_token" == "$access_token" ]]; then
+            echo "$saved_email"
+            return
+          fi
+        done
+      fi
+    fi
   fi
 }
 

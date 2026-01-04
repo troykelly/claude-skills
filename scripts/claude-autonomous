@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.6"
+VERSION="1.6.7"
 
 # Colors
 RED='\033[0;31m'
@@ -49,6 +49,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 # Claude Code config directory (respects CLAUDE_CONFIG_DIR environment variable)

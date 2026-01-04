@@ -73,6 +73,9 @@ PLAN_LIMIT_PATTERNS=(
   "messages?.?limit.*exceeded"
   "exceeded.*messages?.?limit"
   "you.?have.?reached.*limit"
+  "you.?ve.?hit.*limit"
+  "hit.?your.?limit"
+  "resets.*\\(UTC\\)"
   "usage.?cap"
   # HTTP errors with API context (not just bare numbers)
   "api.*429"

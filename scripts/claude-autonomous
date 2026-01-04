@@ -569,34 +569,111 @@ if [[ -n "$RESUME_SESSION" ]]; then
       exit 0
     fi
 
-    echo -e "${BLUE}Resumable Autonomous Sessions:${NC}"
-    echo ""
-    echo -e "  ${BOLD}#   SESSION ID                               REPO           DETAILS${NC}"
-    echo -e "  ─────────────────────────────────────────────────────────────────────────────────────"
+    # Interactive arrow-key menu
+    local selected=0
+    local num_sessions=${#SESSION_IDS[@]}
 
-    for i in "${!SESSION_IDS[@]}"; do
-      num=$((i + 1))
-      printf "  ${CYAN}%-3s${NC} %-37s %-14s %s\n" "$num" "${SESSION_IDS[$i]}" "${SESSION_REPOS[$i]}" "${SESSION_DETAILS[$i]}"
+    # Terminal control
+    tput_available=false
+    if command -v tput &>/dev/null; then
+      tput_available=true
+    fi
+
+    # Hide cursor
+    if [[ "$tput_available" == "true" ]]; then
+      tput civis 2>/dev/null || true
+    fi
+
+    # Restore cursor on exit
+    cleanup_menu() {
+      if [[ "$tput_available" == "true" ]]; then
+        tput cnorm 2>/dev/null || true
+      fi
+      stty echo 2>/dev/null || true
+    }
+    trap cleanup_menu EXIT
+
+    # Draw the menu
+    draw_menu() {
+      # Move cursor up to redraw (after first draw)
+      if [[ "${menu_drawn:-false}" == "true" ]]; then
+        printf "\033[%dA" $((num_sessions + 3))
+      fi
+      menu_drawn=true
+
+      echo -e "${BLUE}Resumable Autonomous Sessions:${NC}                                              "
+      echo -e "  ${YELLOW}↑/↓${NC} Navigate  ${YELLOW}Enter${NC} Select  ${YELLOW}q${NC} Quit                                  "
+      echo ""
+
+      for i in "${!SESSION_IDS[@]}"; do
+        if [[ $i -eq $selected ]]; then
+          # Highlighted row
+          printf "  ${GREEN}▶${NC} ${BOLD}%-36s${NC} ${CYAN}%-14s${NC} %s\033[K\n" \
+            "${SESSION_IDS[$i]:0:36}" "${SESSION_REPOS[$i]}" "${SESSION_DETAILS[$i]:0:30}"
+        else
+          printf "    %-36s %-14s %s\033[K\n" \
+            "${SESSION_IDS[$i]:0:36}" "${SESSION_REPOS[$i]}" "${SESSION_DETAILS[$i]:0:30}"
+        fi
+      done
+    }
+
+    # Initial draw
+    draw_menu
+
+    # Read input
+    while true; do
+      # Read single character (disable echo, raw mode)
+      IFS= read -rsn1 key
+
+      case "$key" in
+        $'\x1b')
+          # Escape sequence - read next two chars for arrow keys
+          read -rsn2 -t 0.1 rest
+          case "$rest" in
+            '[A') # Up arrow
+              if [[ $selected -gt 0 ]]; then
+                selected=$((selected - 1))
+              fi
+              ;;
+            '[B') # Down arrow
+              if [[ $selected -lt $((num_sessions - 1)) ]]; then
+                selected=$((selected + 1))
+              fi
+              ;;
+          esac
+          ;;
+        'k'|'K') # vim up
+          if [[ $selected -gt 0 ]]; then
+            selected=$((selected - 1))
+          fi
+          ;;
+        'j'|'J') # vim down
+          if [[ $selected -lt $((num_sessions - 1)) ]]; then
+            selected=$((selected + 1))
+          fi
+          ;;
+        'q'|'Q')
+          cleanup_menu
+          echo ""
+          echo "Cancelled."
+          exit 0
+          ;;
+        '')
+          # Enter key
+          break
+          ;;
+      esac
+
+      draw_menu
     done
 
+    # Cleanup terminal state
+    cleanup_menu
+    trap - EXIT
     echo ""
-    echo -e "${YELLOW}Enter session number to resume (or 'q' to quit):${NC} "
-    read -r selection
 
-    if [[ "$selection" == "q" || "$selection" == "Q" ]]; then
-      echo "Cancelled."
-      exit 0
-    fi
-
-    # Validate selection
-    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#SESSION_IDS[@]} ]]; then
-      echo -e "${RED}Invalid selection: $selection${NC}"
-      echo "Enter a number between 1 and ${#SESSION_IDS[@]}"
-      exit 1
-    fi
-
-    # Get selected session (0-indexed)
-    idx=$((selection - 1))
+    # Get selected session
+    idx=$selected
     RESUME_SESSION="${SESSION_IDS[$idx]}"
     SESSION_REPO="${SESSION_REPOS[$idx]}"
     SESSION_WORKTREE="${SESSION_WORKTREES[$idx]}"

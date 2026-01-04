@@ -354,8 +354,45 @@ main() {
         --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
         '{from: $from, to: $to, timestamp: $ts, reason: "plan_limit"}' > "$switch_file"
 
-      # ALLOW the stop - Claude must exit and restart with new credentials
-      # Do NOT block - blocking keeps the old credentials active
+      # Force Claude to exit by sending SIGTERM
+      # Claude doesn't auto-exit on rate limits - it just stops responding
+      # We need to kill it so claude-autonomous can restart with new credentials
+      #
+      # Find the Claude process - could be our parent or grandparent depending on shell nesting
+      local claude_pid=""
+
+      # Method 1: Walk up the process tree from our PPID
+      local check_pid=$PPID
+      while [[ -n "$check_pid" && "$check_pid" != "1" ]]; do
+        local proc_name
+        proc_name=$(ps -p "$check_pid" -o comm= 2>/dev/null || true)
+        if [[ "$proc_name" == "claude" ]]; then
+          claude_pid="$check_pid"
+          break
+        fi
+        # Get parent of this process
+        check_pid=$(ps -p "$check_pid" -o ppid= 2>/dev/null | tr -d ' ' || true)
+      done
+
+      # Method 2: Fallback to pgrep if we didn't find it
+      if [[ -z "$claude_pid" ]]; then
+        claude_pid=$(pgrep -x "claude" 2>/dev/null | head -1 || true)
+      fi
+
+      if [[ -n "$claude_pid" ]]; then
+        echo "Sending SIGTERM to Claude (PID $claude_pid) to force restart..." >&2
+        kill -TERM "$claude_pid" 2>/dev/null || true
+        # Give it a moment to clean up
+        sleep 1
+        # If still running, send SIGKILL
+        if kill -0 "$claude_pid" 2>/dev/null; then
+          echo "Claude didn't exit, sending SIGKILL..." >&2
+          kill -KILL "$claude_pid" 2>/dev/null || true
+        fi
+      else
+        echo "Could not find Claude process to terminate. Manual restart required." >&2
+      fi
+
       exit 0
     else
       # No available accounts - allow stop, enter SLEEP mode
@@ -370,7 +407,32 @@ main() {
         --argjson cooldown "$COOLDOWN_MINUTES" \
         '{exhausted_account: $account, timestamp: $ts, cooldown_minutes: $cooldown, reason: "all_accounts_exhausted"}' > "$sleep_file"
 
-      # ALLOW the stop - no point blocking if all accounts are exhausted
+      # Force Claude to exit so claude-autonomous can handle cooldown
+      local claude_pid=""
+      local check_pid=$PPID
+      while [[ -n "$check_pid" && "$check_pid" != "1" ]]; do
+        local proc_name
+        proc_name=$(ps -p "$check_pid" -o comm= 2>/dev/null || true)
+        if [[ "$proc_name" == "claude" ]]; then
+          claude_pid="$check_pid"
+          break
+        fi
+        check_pid=$(ps -p "$check_pid" -o ppid= 2>/dev/null | tr -d ' ' || true)
+      done
+
+      if [[ -z "$claude_pid" ]]; then
+        claude_pid=$(pgrep -x "claude" 2>/dev/null | head -1 || true)
+      fi
+
+      if [[ -n "$claude_pid" ]]; then
+        echo "All accounts exhausted. Terminating Claude for cooldown..." >&2
+        kill -TERM "$claude_pid" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$claude_pid" 2>/dev/null; then
+          kill -KILL "$claude_pid" 2>/dev/null || true
+        fi
+      fi
+
       exit 0
     fi
   fi

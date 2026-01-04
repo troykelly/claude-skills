@@ -5,7 +5,7 @@
 # Validates JSON, YAML, Markdown, and shell scripts after Write/Edit operations.
 # Uses the validate-artifacts.sh library for validation logic.
 #
-# Input: CLAUDE_TOOL_RESULT environment variable (JSON with file path)
+# Input: JSON via stdin with tool_input.file_path (PostToolUse hook format)
 # Output: JSON status to stdout, error details if validation fails
 #
 
@@ -21,15 +21,11 @@ else
   exit 0
 fi
 
-# Parse tool result to get file path
-# Expected format: {"file_path": "/path/to/file", ...}
-if [[ -z "${CLAUDE_TOOL_RESULT:-}" ]]; then
-  # No tool result available - skip
-  exit 0
-fi
+# Read hook input from stdin (PostToolUse hook JSON format)
+HOOK_INPUT=$(cat)
 
-# Extract file path from tool result
-FILE_PATH=$(echo "$CLAUDE_TOOL_RESULT" | jq -r '.file_path // empty' 2>/dev/null)
+# Extract file path from tool_input (Write/Edit tools use file_path)
+FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 
 if [[ -z "$FILE_PATH" ]]; then
   # No file path in result - skip

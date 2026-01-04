@@ -1154,6 +1154,9 @@ FIRST_RUN=true
 echo -e "${GREEN}Starting autonomous operation...${NC}"
 echo ""
 
+# Export SESSION_ID so hooks can create session-specific state files
+export CLAUDE_AUTONOMOUS_SESSION_ID="${SESSION_ID}"
+
 # Run Claude with crash recovery loop
 while true; do
   # Capture exit code without triggering set -e
@@ -1177,8 +1180,8 @@ while true; do
   echo -e "${YELLOW}Claude exited with code ${EXIT_CODE}${NC}"
 
   # Check if the Stop hook already performed an account switch
-  # (Hook writes ~/.claude/.pending-account-switch when it switches)
-  PENDING_SWITCH_FILE="${HOME}/.claude/.pending-account-switch"
+  # (Hook writes session-specific file ~/.claude/.pending-account-switch.${SESSION_ID})
+  PENDING_SWITCH_FILE="${HOME}/.claude/.pending-account-switch.${SESSION_ID}"
   if [[ -f "$PENDING_SWITCH_FILE" ]]; then
     SWITCH_TO=$(jq -r '.to // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
     SWITCH_FROM=$(jq -r '.from // empty' "$PENDING_SWITCH_FILE" 2>/dev/null)
@@ -1200,7 +1203,8 @@ while true; do
   fi
 
   # Check if hook signaled sleep mode (all accounts exhausted)
-  SLEEP_FILE="${HOME}/.claude/.account-sleep-mode"
+  # (Hook writes session-specific file ~/.claude/.account-sleep-mode.${SESSION_ID})
+  SLEEP_FILE="${HOME}/.claude/.account-sleep-mode.${SESSION_ID}"
   if [[ -f "$SLEEP_FILE" ]]; then
     COOLDOWN_MINS=$(jq -r '.cooldown_minutes // 5' "$SLEEP_FILE" 2>/dev/null)
     rm -f "$SLEEP_FILE"

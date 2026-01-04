@@ -38,6 +38,18 @@ COOLDOWN_MINUTES="${CLAUDE_ACCOUNT_COOLDOWN_MINUTES:-5}"
 FLAP_THRESHOLD="${CLAUDE_ACCOUNT_FLAP_THRESHOLD:-3}"
 FLAP_WINDOW_SECONDS="${CLAUDE_ACCOUNT_FLAP_WINDOW:-60}"
 
+# Session-specific state files (to support multiple concurrent sessions)
+# Uses CLAUDE_AUTONOMOUS_SESSION_ID if available, otherwise falls back to PID-based identifier
+get_session_suffix() {
+  if [[ -n "${CLAUDE_AUTONOMOUS_SESSION_ID:-}" ]]; then
+    echo ".${CLAUDE_AUTONOMOUS_SESSION_ID}"
+  else
+    # Fallback: use a hash of transcript path if available, otherwise empty
+    # Empty suffix means global file (backwards compatible for non-autonomous usage)
+    echo ""
+  fi
+}
+
 # Plan limit detection patterns (case-insensitive)
 # These patterns are designed to be SPECIFIC to Claude API rate limiting
 # and avoid false positives from normal conversation content.
@@ -404,8 +416,10 @@ main() {
         echo "claude-account not found. Manual switch required: claude-account switch $next_account" >&2
       fi
 
-      # Write switch state for claude-autonomous to detect
-      local switch_file="${HOME}/.claude/.pending-account-switch"
+      # Write switch state for claude-autonomous to detect (session-specific)
+      local session_suffix
+      session_suffix=$(get_session_suffix)
+      local switch_file="${HOME}/.claude/.pending-account-switch${session_suffix}"
       mkdir -p "$(dirname "$switch_file")"
       jq -n \
         --arg from "$current_email" \
@@ -421,8 +435,10 @@ main() {
       # No available accounts - allow stop, enter SLEEP mode
       echo "Plan limit reached. No available accounts to switch to. All accounts exhausted or in cooldown." >&2
 
-      # Write sleep state for claude-autonomous to detect
-      local sleep_file="${HOME}/.claude/.account-sleep-mode"
+      # Write sleep state for claude-autonomous to detect (session-specific)
+      local session_suffix
+      session_suffix=$(get_session_suffix)
+      local sleep_file="${HOME}/.claude/.account-sleep-mode${session_suffix}"
       mkdir -p "$(dirname "$sleep_file")"
       jq -n \
         --arg account "$current_email" \

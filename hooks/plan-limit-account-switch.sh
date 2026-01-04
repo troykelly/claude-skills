@@ -37,26 +37,49 @@ FLAP_THRESHOLD="${CLAUDE_ACCOUNT_FLAP_THRESHOLD:-3}"
 FLAP_WINDOW_SECONDS="${CLAUDE_ACCOUNT_FLAP_WINDOW:-60}"
 
 # Plan limit detection patterns (case-insensitive)
+# These patterns are designed to be SPECIFIC to Claude API rate limiting
+# and avoid false positives from normal conversation content.
+#
+# IMPORTANT: Patterns must NOT match our own hook output to prevent feedback loops!
+# Our output contains "Plan limit reached" which would match "limit.?reached"
+#
+# We look for specific Claude/Anthropic API error signatures:
 PLAN_LIMIT_PATTERNS=(
-  "rate.?limit"
-  "quota.?exceeded"
-  "usage.?limit"
-  "plan.?limit"
-  "too.?many.?requests"
-  "capacity.?limit"
-  "request.?limit"
-  "token.?limit"
-  "monthly.?limit"
-  "daily.?limit"
-  "hour.?limit"
-  "minute.?limit"
-  "exceeded.?your"
-  "limit.?reached"
-  "try.?again.?later"
-  "throttl"
-  "429"
-  "503"
-  "overloaded"
+  # Specific Claude/Anthropic API error messages
+  "claude.*rate.?limit"
+  "anthropic.*rate.?limit"
+  "api.*rate.?limit"
+  "claude.*quota"
+  "anthropic.*quota"
+  "claude.*usage.?limit"
+  "pro.?plan.*limit"
+  "subscription.*limit"
+  "messages?.?limit.*exceeded"
+  "exceeded.*messages?.?limit"
+  "you.?have.?reached.*limit"
+  "usage.?cap"
+  # HTTP errors with API context (not just bare numbers)
+  "api.*429"
+  "429.*rate"
+  "error.*429"
+  "api.*503"
+  "503.*overload"
+  "claude.*overload"
+  "anthropic.*overload"
+  # Specific throttling contexts
+  "api.*throttl"
+  "request.*throttl"
+  "claude.*throttl"
+)
+
+# Patterns that indicate our OWN output (to exclude from matching)
+SELF_OUTPUT_MARKERS=(
+  "Plan limit reached on"
+  "Switching to account:"
+  "claude-account switch"
+  "All accounts exhausted"
+  "Entering SLEEP mode"
+  "entering cooldown"
 )
 
 # Initialize exhaustion tracking file
@@ -82,15 +105,32 @@ detect_plan_limit() {
     return 1
   fi
 
-  # Build combined regex pattern
+  # Build combined regex pattern for detection
   local pattern=""
   for p in "${PLAN_LIMIT_PATTERNS[@]}"; do
     [[ -n "$pattern" ]] && pattern="${pattern}|"
     pattern="${pattern}${p}"
   done
 
-  # Search last 50 lines of transcript (most recent activity)
-  if tail -50 "$transcript_path" 2>/dev/null | grep -qiE "$pattern"; then
+  # Build exclusion pattern for our own output (to prevent feedback loops)
+  local exclude_pattern=""
+  for p in "${SELF_OUTPUT_MARKERS[@]}"; do
+    [[ -n "$exclude_pattern" ]] && exclude_pattern="${exclude_pattern}|"
+    exclude_pattern="${exclude_pattern}${p}"
+  done
+
+  # Search last 50 lines of transcript, excluding our own output
+  # 1. Get last 50 lines
+  # 2. Filter out lines containing our self-output markers
+  # 3. Check remaining lines for plan limit patterns
+  local filtered_content
+  filtered_content=$(tail -50 "$transcript_path" 2>/dev/null | grep -viE "$exclude_pattern" || true)
+
+  if [[ -z "$filtered_content" ]]; then
+    return 1
+  fi
+
+  if echo "$filtered_content" | grep -qiE "$pattern"; then
     return 0
   fi
 

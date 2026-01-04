@@ -163,7 +163,8 @@ mark_exhausted() {
 
   local tmp_file
   tmp_file=$(mktemp)
-  # Use trap to clean up temp file on failure
+  # Use trap to clean up temp file on failure (expand now, not at signal time)
+  # shellcheck disable=SC2064
   trap "rm -f '$tmp_file'" RETURN
 
   if jq --arg email "$email" --arg ts "$timestamp" \
@@ -185,7 +186,8 @@ record_switch() {
 
   local tmp_file
   tmp_file=$(mktemp)
-  # Use trap to clean up temp file on failure
+  # Use trap to clean up temp file on failure (expand now, not at signal time)
+  # shellcheck disable=SC2064
   trap "rm -f '$tmp_file'" RETURN
 
   if jq --arg from "$from_email" --arg to "$to_email" --argjson ts "$timestamp" \

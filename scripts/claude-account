@@ -45,7 +45,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.7"
+VERSION="1.6.8"
 
 # Colors
 RED='\033[0;31m'
@@ -943,7 +943,7 @@ show_exhaustion_status() {
   parse_email_list "$accounts_list" emails
 
   for email in "${emails[@]}"; do
-    local exhausted_at status_icon status_text remaining
+    local exhausted_at status_icon status_text
 
     exhausted_at=$(jq -r --arg email "$email" '.exhausted[$email] // empty' "$EXHAUSTION_FILE" 2>/dev/null)
 

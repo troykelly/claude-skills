@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.7"
+VERSION="1.6.8"
 
 # Colors
 RED='\033[0;31m'
@@ -680,13 +680,13 @@ if [[ -n "$RESUME_SESSION" ]]; then
     RESUME_SESSION="${SESSION_IDS[$idx]}"
     SESSION_REPO="${SESSION_REPOS[$idx]}"
     SESSION_WORKTREE="${SESSION_WORKTREES[$idx]}"
-    SESSION_DETAILS="${SESSION_DETAILS[$idx]}"
+    SELECTED_DETAILS="${SESSION_DETAILS[$idx]}"
 
     echo ""
     echo -e "${GREEN}Selected session: ${RESUME_SESSION}${NC}"
     echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
     echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
-    echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+    echo -e "${BLUE}Details:${NC}      ${SELECTED_DETAILS}"
     echo ""
 
     # Check if worktree exists, recreate if not
@@ -757,12 +757,12 @@ if [[ -n "$RESUME_SESSION" ]]; then
       # Format: timestamp session_id repo_name worktree_path details
       SESSION_REPO=$(echo "$SESSION_INFO" | awk '{print $3}')
       SESSION_WORKTREE=$(echo "$SESSION_INFO" | awk '{print $4}')
-      SESSION_DETAILS=$(echo "$SESSION_INFO" | cut -d' ' -f5-)
+      SELECTED_DETAILS=$(echo "$SESSION_INFO" | cut -d' ' -f5-)
 
       echo -e "${BLUE}Session ID:${NC}   ${RESUME_SESSION}"
       echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
       echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
-      echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+      echo -e "${BLUE}Details:${NC}      ${SELECTED_DETAILS}"
       echo ""
 
       # Check if Claude session file exists before attempting resume

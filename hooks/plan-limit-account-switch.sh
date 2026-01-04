@@ -19,8 +19,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "${SCRIPT_DIR}/lib/log-event.sh" ]] && source "${SCRIPT_DIR}/lib/log-event.sh"
 
+# Claude Code config directory (respects CLAUDE_CONFIG_DIR environment variable)
+# If CLAUDE_CONFIG_DIR is set: config at $CLAUDE_CONFIG_DIR/.claude.json
+# Otherwise: config at ~/.claude.json
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
+if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
+  CLAUDE_CONFIG="${CLAUDE_CONFIG_DIR}/.claude.json"
+  EXHAUSTION_FILE="${CLAUDE_CONFIG_DIR}/.account-exhaustion.json"
+else
+  CLAUDE_CONFIG="${HOME}/.claude.json"
+  EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
+fi
+
 # Configuration
-EXHAUSTION_FILE="${HOME}/.claude/.account-exhaustion.json"
 COOLDOWN_MINUTES="${CLAUDE_ACCOUNT_COOLDOWN_MINUTES:-5}"
 FLAP_THRESHOLD="${CLAUDE_ACCOUNT_FLAP_THRESHOLD:-3}"
 FLAP_WINDOW_SECONDS="${CLAUDE_ACCOUNT_FLAP_WINDOW:-60}"
@@ -222,11 +233,10 @@ get_next_available() {
   return 1
 }
 
-# Get current account email from ~/.claude.json
+# Get current account email from Claude config
 get_current_email() {
-  local config="${HOME}/.claude.json"
-  if [[ -f "$config" ]]; then
-    jq -r '.oauthAccount.emailAddress // empty' "$config" 2>/dev/null
+  if [[ -f "$CLAUDE_CONFIG" ]]; then
+    jq -r '.oauthAccount.emailAddress // empty' "$CLAUDE_CONFIG" 2>/dev/null
   fi
 }
 

@@ -20,6 +20,7 @@
 #   MAX_CRASHES          Maximum crashes before giving up (default: 10)
 #   CLAUDE_ACCOUNT_COOLDOWN_MINUTES  Cooldown after account exhaustion (default: 5)
 #   CLAUDE_AUTONOMOUS_MAX_SWITCHES   Max account switches per session (default: 10)
+#   CLAUDE_CONFIG_DIR    Claude Code config directory (set by Claude Code in devcontainers)
 #
 # Note: Uses claude-opus-4-5-20251101 (Opus 4.5) as the default model
 #
@@ -43,6 +44,16 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+# Claude Code config directory (respects CLAUDE_CONFIG_DIR environment variable)
+# If CLAUDE_CONFIG_DIR is set: projects at $CLAUDE_CONFIG_DIR/projects/
+# Otherwise: projects at ~/.claude/projects/
+CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
+if [[ -n "$CLAUDE_CONFIG_DIR" ]]; then
+  CLAUDE_PROJECTS_DIR="${CLAUDE_CONFIG_DIR}/projects"
+else
+  CLAUDE_PROJECTS_DIR="${HOME}/.claude/projects"
+fi
 
 # Multi-account configuration
 MAX_ACCOUNT_SWITCHES="${CLAUDE_AUTONOMOUS_MAX_SWITCHES:-10}"
@@ -221,7 +232,7 @@ while [[ $# -gt 0 ]]; do
           # Check if Claude session file exists
           # Worktree path like /tmp/claude-worktrees/repo/uuid -> encoded as -tmp-claude-worktrees-repo-uuid
           encoded_path=$(echo "$worktree" | sed 's|/|-|g')
-          session_file="${HOME}/.claude/projects/${encoded_path}/${sid}.jsonl"
+          session_file="${CLAUDE_PROJECTS_DIR}/${encoded_path}/${sid}.jsonl"
 
           if [[ -f "$session_file" ]]; then
             status="${GREEN}resumable${NC}"
@@ -408,7 +419,7 @@ if [[ "$CONTINUE_MODE" == "true" ]]; then
 
   # Check if Claude session file exists before attempting resume
   encoded_path=$(echo "$SESSION_WORKTREE" | sed 's|/|-|g')
-  session_file="${HOME}/.claude/projects/${encoded_path}/${SESSION_ID}.jsonl"
+  session_file="${CLAUDE_PROJECTS_DIR}/${encoded_path}/${SESSION_ID}.jsonl"
 
   if [[ ! -f "$session_file" ]]; then
     echo -e "${RED}Error: No Claude session file found${NC}"
@@ -565,7 +576,7 @@ if [[ -n "$RESUME_SESSION" ]]; then
 
       # Check if Claude session file exists before attempting resume
       encoded_path=$(echo "$SESSION_WORKTREE" | sed 's|/|-|g')
-      session_file="${HOME}/.claude/projects/${encoded_path}/${RESUME_SESSION}.jsonl"
+      session_file="${CLAUDE_PROJECTS_DIR}/${encoded_path}/${RESUME_SESSION}.jsonl"
 
       if [[ ! -f "$session_file" ]]; then
         echo -e "${RED}Error: No Claude session file found${NC}"

@@ -526,51 +526,150 @@ if [[ -n "$RESUME_SESSION" ]]; then
   echo ""
 
   if [[ "$RESUME_SESSION" == "INTERACTIVE" ]]; then
-    # Show our logged sessions for reference
-    if [[ -f "$SESSION_LOG" ]]; then
-      echo -e "${BLUE}Recent autonomous sessions from this script:${NC}"
+    # Build list of resumable autonomous sessions
+    if [[ ! -f "$SESSION_LOG" ]]; then
+      echo -e "${YELLOW}No autonomous sessions recorded yet.${NC}"
       echo ""
-      # Format: timestamp session_id repo_name worktree_path details
-      tail -10 "$SESSION_LOG" | tac | while read -r line; do
-        sid=$(echo "$line" | awk '{print $2}')
-        repo=$(echo "$line" | awk '{print $3}')
-        details=$(echo "$line" | cut -d' ' -f5-)
-        echo -e "  ${CYAN}${sid:0:8}...${NC}  $repo  $details"
-      done
+      echo "Start an autonomous session first with: claude-autonomous"
+      exit 0
+    fi
+
+    # Collect resumable sessions into arrays
+    declare -a SESSION_IDS=()
+    declare -a SESSION_REPOS=()
+    declare -a SESSION_WORKTREES=()
+    declare -a SESSION_DETAILS=()
+    declare -a SESSION_STATUSES=()
+
+    while read -r line; do
+      [[ -z "$line" ]] && continue
+      sid=$(echo "$line" | awk '{print $2}')
+      repo=$(echo "$line" | awk '{print $3}')
+      worktree=$(echo "$line" | awk '{print $4}')
+      details=$(echo "$line" | cut -d' ' -f5-)
+
+      # Check if Claude session file exists
+      encoded_path=$(echo "$worktree" | sed 's|/|-|g')
+      session_file="${CLAUDE_PROJECTS_DIR}/${encoded_path}/${sid}.jsonl"
+
+      if [[ -f "$session_file" ]]; then
+        SESSION_IDS+=("$sid")
+        SESSION_REPOS+=("$repo")
+        SESSION_WORKTREES+=("$worktree")
+        SESSION_DETAILS+=("$details")
+        SESSION_STATUSES+=("resumable")
+      fi
+    done < <(tail -20 "$SESSION_LOG" | tac)
+
+    if [[ ${#SESSION_IDS[@]} -eq 0 ]]; then
+      echo -e "${YELLOW}No resumable sessions found.${NC}"
+      echo ""
+      echo "Sessions may have been cleaned up or created in a different environment."
+      echo "Start a new session with: claude-autonomous"
+      exit 0
+    fi
+
+    echo -e "${BLUE}Resumable Autonomous Sessions:${NC}"
+    echo ""
+    echo -e "  ${BOLD}#   SESSION ID                               REPO           DETAILS${NC}"
+    echo -e "  ─────────────────────────────────────────────────────────────────────────────────────"
+
+    for i in "${!SESSION_IDS[@]}"; do
+      num=$((i + 1))
+      printf "  ${CYAN}%-3s${NC} %-37s %-14s %s\n" "$num" "${SESSION_IDS[$i]}" "${SESSION_REPOS[$i]}" "${SESSION_DETAILS[$i]}"
+    done
+
+    echo ""
+    echo -e "${YELLOW}Enter session number to resume (or 'q' to quit):${NC} "
+    read -r selection
+
+    if [[ "$selection" == "q" || "$selection" == "Q" ]]; then
+      echo "Cancelled."
+      exit 0
+    fi
+
+    # Validate selection
+    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#SESSION_IDS[@]} ]]; then
+      echo -e "${RED}Invalid selection: $selection${NC}"
+      echo "Enter a number between 1 and ${#SESSION_IDS[@]}"
+      exit 1
+    fi
+
+    # Get selected session (0-indexed)
+    idx=$((selection - 1))
+    RESUME_SESSION="${SESSION_IDS[$idx]}"
+    SESSION_REPO="${SESSION_REPOS[$idx]}"
+    SESSION_WORKTREE="${SESSION_WORKTREES[$idx]}"
+    SESSION_DETAILS="${SESSION_DETAILS[$idx]}"
+
+    echo ""
+    echo -e "${GREEN}Selected session: ${RESUME_SESSION}${NC}"
+    echo -e "${BLUE}Repository:${NC}   ${SESSION_REPO}"
+    echo -e "${BLUE}Worktree:${NC}     ${SESSION_WORKTREE}"
+    echo -e "${BLUE}Details:${NC}      ${SESSION_DETAILS}"
+    echo ""
+
+    # Check if worktree exists, recreate if not
+    if [[ ! -d "$SESSION_WORKTREE" ]]; then
+      echo -e "${YELLOW}Worktree no longer exists. Recreating...${NC}"
+
+      # We need to be in a git repo to create worktree
+      if ! git rev-parse --show-toplevel &>/dev/null; then
+        echo -e "${RED}Error: Not in a git repository${NC}"
+        echo "Run this command from within the ${SESSION_REPO} repository"
+        exit 1
+      fi
+
+      REPO_ROOT=$(git rev-parse --show-toplevel)
+      CURRENT_REPO=$(basename "$REPO_ROOT")
+
+      if [[ "$CURRENT_REPO" != "$SESSION_REPO" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Current repo (${CURRENT_REPO}) differs from session repo (${SESSION_REPO})"
+      fi
+
+      # Detect default branch
+      DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "main")
+      if [[ -z "$DEFAULT_BRANCH" ]]; then
+        if git rev-parse --verify origin/main &>/dev/null; then
+          DEFAULT_BRANCH="main"
+        elif git rev-parse --verify origin/master &>/dev/null; then
+          DEFAULT_BRANCH="master"
+        else
+          echo -e "${RED}Error: Could not detect default branch${NC}"
+          exit 1
+        fi
+      fi
+
+      # Prune stale worktrees and fetch
+      git worktree prune 2>/dev/null || true
+      git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || true
+
+      # Create parent directory if needed
+      mkdir -p "$(dirname "$SESSION_WORKTREE")"
+
+      # Create worktree at the exact same path
+      if ! git worktree add "${SESSION_WORKTREE}" "origin/${DEFAULT_BRANCH}" 2>&1; then
+        echo -e "${RED}Error: Failed to recreate worktree${NC}"
+        echo "Try: git worktree prune && git worktree list"
+        exit 1
+      fi
+      echo -e "${GREEN}Worktree recreated successfully${NC}"
+      echo ""
+    else
+      echo -e "${GREEN}Worktree exists${NC}"
       echo ""
     fi
 
-    echo -e "${BLUE}Opening Claude's session picker...${NC}"
+    # Change to worktree directory and resume
+    cd "${SESSION_WORKTREE}" || {
+      echo -e "${RED}Error: Cannot access worktree directory${NC}"
+      exit 1
+    }
+
+    echo -e "${GREEN}Resuming session from worktree...${NC}"
     echo ""
-    echo -e "${YELLOW}Tip:${NC} Use ↑/↓ to navigate, Enter to select, P to preview"
-    echo -e "     Press A to toggle between current directory and all projects"
-    echo ""
-    # Use Claude's native --resume for interactive picker with crash recovery
-    # After selection, if Claude crashes, --continue resumes the most recent session
-    max_crashes="${MAX_CRASHES:-10}"
-    total_crashes=0
-    first_run=true
-    while true; do
-      exit_code=0
-      if [[ "$first_run" == "true" ]]; then
-        first_run=false
-        claude --dangerously-skip-permissions --resume || exit_code=$?
-      else
-        # After first run, use --continue to resume the session they selected
-        claude --dangerously-skip-permissions --continue || exit_code=$?
-      fi
-      if [[ $exit_code -eq 0 ]]; then
-        echo -e "${GREEN}Session completed successfully${NC}"
-        exit 0
-      fi
-      total_crashes=$((total_crashes + 1))
-      if (( total_crashes >= max_crashes )); then
-        echo -e "${RED}Maximum crash limit reached (${total_crashes}/${max_crashes})${NC}"
-        exit 1
-      fi
-      echo -e "${YELLOW}Claude exited with code ${exit_code}. Restarting... (crash ${total_crashes}/${max_crashes})${NC}"
-      sleep 3
-    done
+    run_with_crash_recovery "${RESUME_SESSION}"
+    exit $?
   else
     # Specific session ID provided - look up worktree path and recreate if needed
     SESSION_INFO=$(get_session_info "$RESUME_SESSION")

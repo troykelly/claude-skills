@@ -37,15 +37,22 @@ if [ -z "$REPO" ]; then
   exit 0
 fi
 
-# Get current branch
-CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+# Get current user for author filtering
+CURRENT_USER=$(gh api user --jq '.login' 2>/dev/null || echo "")
 
-# Check for open PRs from current branch
-OPEN_PRS=$(gh pr list --head "$CURRENT_BRANCH" --state open --json number,title,headRefName 2>/dev/null || echo "[]")
+# Check for ALL open PRs in the repo (not just current branch)
+# This catches PRs created during this session from any feature branch
+if [ -n "$CURRENT_USER" ]; then
+  # Filter to PRs authored by current user
+  OPEN_PRS=$(gh pr list --author "$CURRENT_USER" --state open --json number,title,headRefName 2>/dev/null || echo "[]")
+else
+  # Fallback to all open PRs if we can't determine user
+  OPEN_PRS=$(gh pr list --state open --json number,title,headRefName 2>/dev/null || echo "[]")
+fi
 PR_COUNT=$(echo "$OPEN_PRS" | jq 'length')
 
 if [ "$PR_COUNT" = "0" ]; then
-  # No open PRs from this branch - allow stop
+  # No open PRs - allow stop
   log_hook_event "Stop" "check-ci-before-stop" "completed" '{"status": "no open PRs"}'
   exit 0
 fi

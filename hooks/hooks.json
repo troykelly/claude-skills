@@ -85,6 +85,20 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/track-test-results.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-pr-creation.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "**PR CREATED - MANDATORY NEXT STEPS:**\n\nYou just created a PR. Your work is NOT complete. You MUST now:\n\n1. **Monitor CI** - Run `gh pr checks [PR_NUMBER] --watch` and wait for completion\n2. **If CI fails** - Fix the failures, push, and monitor again\n3. **If CI passes** - Merge immediately with `gh pr merge [PR_NUMBER] --squash --delete-branch`\n4. **Continue working** - Pick up the next issue in scope\n\n**DO NOT:**\n- Stop and give a summary\n- Wait for user confirmation\n- Report 'PR created, ready for review'\n\n**The workflow is: Create PR → Monitor CI → Merge → Next Issue → Repeat**\n\nProceed with CI monitoring NOW."
           }
         ]
       }

@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.4"
+VERSION="1.6.5"
 
 # Colors
 RED='\033[0;31m'
@@ -1191,9 +1191,9 @@ while true; do
 
     if [[ -n "$SWITCH_TO" ]]; then
       echo -e "${GREEN}Account switched by hook: ${SWITCH_FROM} → ${SWITCH_TO}${NC}"
-      ACCOUNT_SWITCHES=$((ACCOUNT_SWITCHES + 1))
+      ACCOUNT_SWITCH_COUNT=$((ACCOUNT_SWITCH_COUNT + 1))
 
-      if (( ACCOUNT_SWITCHES >= MAX_ACCOUNT_SWITCHES )); then
+      if (( ACCOUNT_SWITCH_COUNT >= MAX_ACCOUNT_SWITCHES )); then
         echo -e "${RED}Maximum account switches ($MAX_ACCOUNT_SWITCHES) reached${NC}" >&2
         exit 1
       fi

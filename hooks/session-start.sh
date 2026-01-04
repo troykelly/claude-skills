@@ -183,8 +183,8 @@ if [ -n "$CLAUDE_ACCOUNT" ]; then
 else
     echo -e "  ${RED}✗${NC} claude-account script not found"
     echo -e "  ${BLUE}│${NC} Multi-account switching: disabled"
-    echo -e "  ${BLUE}│${NC} Install: Add scripts/claude-account to PATH or install plugin"
-    WARNINGS+=("claude-account not available - multi-account switching disabled")
+    echo -e "  ${BLUE}│${NC} Install: https://github.com/troykelly/claude-skills?tab=readme-ov-file#one-line-install"
+    WARNINGS+=("claude-account not available - run install.sh to enable multi-account switching")
 fi
 
 # Check MCP server dependencies

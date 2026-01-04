@@ -2,15 +2,17 @@
 #
 # plan-limit-account-switch.sh - Stop hook for detecting plan limits and switching accounts
 #
-# This hook intercepts Claude's exit attempts and checks if the session ended
-# due to plan/rate limit exhaustion. If so, it attempts to switch to another
-# available Claude Pro account and continue the work.
+# This hook intercepts Claude's stop attempts and checks if the session ended
+# due to plan/rate limit exhaustion. If so, it:
+#   1. Switches to another available Claude Pro account
+#   2. Writes state files for claude-autonomous to detect
+#   3. Sends SIGTERM to force Claude to exit (credentials are loaded at startup)
+#   4. claude-autonomous then resumes with new credentials
 #
 # Part of the Ralph Wiggum-inspired autonomous operation pattern.
 #
 # Exit codes:
-#   0 - Allow stop (no plan limit detected, or no accounts available)
-#   0 with JSON {"decision": "block"} - Block stop and continue with new account
+#   0 - Always exits 0, but may kill Claude process before exiting
 #
 
 set -euo pipefail
@@ -147,9 +149,15 @@ mark_exhausted() {
 
   local tmp_file
   tmp_file=$(mktemp)
-  jq --arg email "$email" --arg ts "$timestamp" \
-    '.exhausted[$email] = $ts' "$EXHAUSTION_FILE" > "$tmp_file"
-  mv "$tmp_file" "$EXHAUSTION_FILE"
+  # Use trap to clean up temp file on failure
+  trap "rm -f '$tmp_file'" RETURN
+
+  if jq --arg email "$email" --arg ts "$timestamp" \
+    '.exhausted[$email] = $ts' "$EXHAUSTION_FILE" > "$tmp_file" 2>/dev/null; then
+    mv "$tmp_file" "$EXHAUSTION_FILE"
+  else
+    echo "Warning: Failed to mark account as exhausted" >&2
+  fi
 }
 
 # Record an account switch (for flap detection)
@@ -163,10 +171,16 @@ record_switch() {
 
   local tmp_file
   tmp_file=$(mktemp)
-  jq --arg from "$from_email" --arg to "$to_email" --argjson ts "$timestamp" \
+  # Use trap to clean up temp file on failure
+  trap "rm -f '$tmp_file'" RETURN
+
+  if jq --arg from "$from_email" --arg to "$to_email" --argjson ts "$timestamp" \
     '.switches += [{"from": $from, "to": $to, "timestamp": $ts}] | .switches = (.switches | .[-20:])' \
-    "$EXHAUSTION_FILE" > "$tmp_file"
-  mv "$tmp_file" "$EXHAUSTION_FILE"
+    "$EXHAUSTION_FILE" > "$tmp_file" 2>/dev/null; then
+    mv "$tmp_file" "$EXHAUSTION_FILE"
+  else
+    echo "Warning: Failed to record account switch" >&2
+  fi
 }
 
 # Check if we're flapping (too many switches in short window)
@@ -177,8 +191,14 @@ is_flapping() {
   now=$(date +%s)
   threshold_time=$((now - FLAP_WINDOW_SECONDS))
 
+  # Handle jq failure gracefully - if we can't read the file, assume not flapping
   count=$(jq --argjson threshold "$threshold_time" \
-    '[.switches[] | select(.timestamp > $threshold)] | length' "$EXHAUSTION_FILE")
+    '[.switches[] | select(.timestamp > $threshold)] | length' "$EXHAUSTION_FILE" 2>/dev/null) || count=0
+
+  # Ensure count is numeric (default to 0 if empty or invalid)
+  if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+    count=0
+  fi
 
   [[ "$count" -ge "$FLAP_THRESHOLD" ]]
 }
@@ -280,6 +300,45 @@ get_current_email() {
   fi
 }
 
+# Terminate the Claude process by finding it and sending SIGTERM/SIGKILL
+# Claude doesn't auto-exit on rate limits, so we force it to exit
+terminate_claude() {
+  local reason="${1:-rate limit}"
+  local claude_pid=""
+
+  # Method 1: Walk up the process tree from our PPID
+  local check_pid=$PPID
+  while [[ -n "$check_pid" && "$check_pid" != "1" ]]; do
+    local proc_name
+    proc_name=$(ps -p "$check_pid" -o comm= 2>/dev/null || true)
+    if [[ "$proc_name" == "claude" ]]; then
+      claude_pid="$check_pid"
+      break
+    fi
+    # Get parent of this process
+    check_pid=$(ps -p "$check_pid" -o ppid= 2>/dev/null | tr -d ' ' || true)
+  done
+
+  # Method 2: Fallback to pgrep if we didn't find it
+  if [[ -z "$claude_pid" ]]; then
+    claude_pid=$(pgrep -x "claude" 2>/dev/null | head -1 || true)
+  fi
+
+  if [[ -n "$claude_pid" ]]; then
+    echo "Terminating Claude (PID $claude_pid) due to $reason..." >&2
+    kill -TERM "$claude_pid" 2>/dev/null || true
+    # Give it a moment to clean up
+    sleep 1
+    # If still running, send SIGKILL
+    if kill -0 "$claude_pid" 2>/dev/null; then
+      echo "Claude didn't exit cleanly, sending SIGKILL..." >&2
+      kill -KILL "$claude_pid" 2>/dev/null || true
+    fi
+  else
+    echo "Could not find Claude process to terminate. Manual restart required." >&2
+  fi
+}
+
 # Main hook logic
 main() {
   # Read hook input from stdin
@@ -354,44 +413,8 @@ main() {
         --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
         '{from: $from, to: $to, timestamp: $ts, reason: "plan_limit"}' > "$switch_file"
 
-      # Force Claude to exit by sending SIGTERM
-      # Claude doesn't auto-exit on rate limits - it just stops responding
-      # We need to kill it so claude-autonomous can restart with new credentials
-      #
-      # Find the Claude process - could be our parent or grandparent depending on shell nesting
-      local claude_pid=""
-
-      # Method 1: Walk up the process tree from our PPID
-      local check_pid=$PPID
-      while [[ -n "$check_pid" && "$check_pid" != "1" ]]; do
-        local proc_name
-        proc_name=$(ps -p "$check_pid" -o comm= 2>/dev/null || true)
-        if [[ "$proc_name" == "claude" ]]; then
-          claude_pid="$check_pid"
-          break
-        fi
-        # Get parent of this process
-        check_pid=$(ps -p "$check_pid" -o ppid= 2>/dev/null | tr -d ' ' || true)
-      done
-
-      # Method 2: Fallback to pgrep if we didn't find it
-      if [[ -z "$claude_pid" ]]; then
-        claude_pid=$(pgrep -x "claude" 2>/dev/null | head -1 || true)
-      fi
-
-      if [[ -n "$claude_pid" ]]; then
-        echo "Sending SIGTERM to Claude (PID $claude_pid) to force restart..." >&2
-        kill -TERM "$claude_pid" 2>/dev/null || true
-        # Give it a moment to clean up
-        sleep 1
-        # If still running, send SIGKILL
-        if kill -0 "$claude_pid" 2>/dev/null; then
-          echo "Claude didn't exit, sending SIGKILL..." >&2
-          kill -KILL "$claude_pid" 2>/dev/null || true
-        fi
-      else
-        echo "Could not find Claude process to terminate. Manual restart required." >&2
-      fi
+      # Force Claude to exit so it can restart with new credentials
+      terminate_claude "account switch to $next_account"
 
       exit 0
     else
@@ -408,30 +431,7 @@ main() {
         '{exhausted_account: $account, timestamp: $ts, cooldown_minutes: $cooldown, reason: "all_accounts_exhausted"}' > "$sleep_file"
 
       # Force Claude to exit so claude-autonomous can handle cooldown
-      local claude_pid=""
-      local check_pid=$PPID
-      while [[ -n "$check_pid" && "$check_pid" != "1" ]]; do
-        local proc_name
-        proc_name=$(ps -p "$check_pid" -o comm= 2>/dev/null || true)
-        if [[ "$proc_name" == "claude" ]]; then
-          claude_pid="$check_pid"
-          break
-        fi
-        check_pid=$(ps -p "$check_pid" -o ppid= 2>/dev/null | tr -d ' ' || true)
-      done
-
-      if [[ -z "$claude_pid" ]]; then
-        claude_pid=$(pgrep -x "claude" 2>/dev/null | head -1 || true)
-      fi
-
-      if [[ -n "$claude_pid" ]]; then
-        echo "All accounts exhausted. Terminating Claude for cooldown..." >&2
-        kill -TERM "$claude_pid" 2>/dev/null || true
-        sleep 1
-        if kill -0 "$claude_pid" 2>/dev/null; then
-          kill -KILL "$claude_pid" 2>/dev/null || true
-        fi
-      fi
+      terminate_claude "all accounts exhausted"
 
       exit 0
     fi

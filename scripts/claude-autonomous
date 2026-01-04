@@ -2,6 +2,8 @@
 #
 # claude-autonomous - Start autonomous issue-driven development with Claude
 #
+# Version: 1.6.0 (issue-driven-development plugin)
+#
 # Usage:
 #   claude-autonomous [OPTIONS]
 #
@@ -12,6 +14,7 @@
 #   --resume [ID]        Resume a session: opens Claude's picker, or resumes specific ID
 #   -l, --list           List worktree session history
 #   -r, --repo <path>    Repository path (default: current directory)
+#   -v, --version        Show version information
 #   -h, --help           Show this help message
 #
 # Environment Variables:
@@ -36,6 +39,9 @@
 # Documentation: https://github.com/troykelly/claude-skills
 
 set -euo pipefail
+
+# Version - keep in sync with plugin.json
+VERSION="1.6.0"
 
 # Colors
 RED='\033[0;31m'
@@ -264,8 +270,14 @@ while [[ $# -gt 0 ]]; do
       REPO_PATH="$2"
       shift 2
       ;;
+    -v|--version)
+      echo "claude-autonomous version ${VERSION}"
+      echo "Part of issue-driven-development plugin"
+      echo "https://github.com/troykelly/claude-skills"
+      exit 0
+      ;;
     -h|--help)
-      head -35 "$0" | grep -E "^#" | sed 's/^# *//'
+      head -38 "$0" | grep -E "^#" | sed 's/^# *//'
       exit 0
       ;;
     *)

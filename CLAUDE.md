@@ -296,6 +296,55 @@ Before committing a new or modified skill:
 
 ---
 
+## Version Management
+
+### Version Locations
+
+When releasing a new version, ALL of these files must be updated with the same version number:
+
+| File | Field | Purpose |
+|------|-------|---------|
+| `.claude-plugin/plugin.json` | `version` | Plugin manifest version |
+| `.claude-plugin/marketplace.json` | `metadata.version` | Marketplace metadata version |
+| `.claude-plugin/marketplace.json` | `plugins[0].version` | Plugin entry version |
+| `scripts/claude-account` | `VERSION="X.Y.Z"` | Script version constant |
+| `scripts/claude-autonomous` | `VERSION="X.Y.Z"` | Script version constant |
+
+### Version Bump Checklist
+
+When bumping the version:
+
+```bash
+# 1. Update plugin.json
+jq '.version = "X.Y.Z"' .claude-plugin/plugin.json > tmp && mv tmp .claude-plugin/plugin.json
+
+# 2. Update marketplace.json (two locations)
+jq '.metadata.version = "X.Y.Z" | .plugins[0].version = "X.Y.Z"' .claude-plugin/marketplace.json > tmp && mv tmp .claude-plugin/marketplace.json
+
+# 3. Update scripts (manually edit VERSION="X.Y.Z" in both)
+# - scripts/claude-account
+# - scripts/claude-autonomous
+
+# 4. Verify all match
+grep -h "version" .claude-plugin/*.json | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+grep "^VERSION=" scripts/claude-account scripts/claude-autonomous
+```
+
+### Verifying Version Sync
+
+Run to check all versions are in sync:
+
+```bash
+scripts/claude-account --version
+scripts/claude-autonomous --version
+jq -r '.version' .claude-plugin/plugin.json
+jq -r '.metadata.version, .plugins[0].version' .claude-plugin/marketplace.json
+```
+
+All should output the same version number.
+
+---
+
 ## Recovery From Failure
 
 ### If You Realize You Cut Corners

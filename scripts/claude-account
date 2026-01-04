@@ -2,6 +2,8 @@
 #
 # claude-account - Manage multiple Claude Code accounts via .env
 #
+# Version: 1.6.0 (issue-driven-development plugin)
+#
 # Usage:
 #   claude-account <command> [options]
 #
@@ -18,6 +20,7 @@
 #   reset-exhausted     Reset all exhaustion statuses
 #   is-exhausted        Exit 0 if current account is exhausted, 1 otherwise
 #   status              Show exhaustion status of all accounts
+#   version, -v         Show version information
 #
 # Environment Variables:
 #   CLAUDE_ENV_FILE     Path to .env file (default: ./.env)
@@ -40,6 +43,9 @@
 # Tip: Sync your .env to 1Password for persistence across devcontainer rebuilds
 
 set -euo pipefail
+
+# Version - keep in sync with plugin.json
+VERSION="1.6.0"
 
 # Colors
 RED='\033[0;31m'
@@ -1018,6 +1024,13 @@ show_help() {
   head -45 "$0" | grep -E "^#" | sed 's/^# *//' | sed 's/^#//'
 }
 
+# Show version
+show_version() {
+  echo "claude-account version ${VERSION}"
+  echo "Part of issue-driven-development plugin"
+  echo "https://github.com/troykelly/claude-skills"
+}
+
 # Main
 main() {
   check_deps
@@ -1055,6 +1068,9 @@ main() {
       ;;
     status)
       show_exhaustion_status
+      ;;
+    version|-v|--version)
+      show_version
       ;;
     -h|--help|help|"")
       show_help

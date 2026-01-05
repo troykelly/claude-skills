@@ -45,7 +45,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.6.11"
+VERSION="1.7.0"
 
 # Colors
 RED='\033[0;31m'
@@ -80,6 +80,10 @@ KEYCHAIN_SERVICE="Claude Code-credentials"
 
 # Exhaustion tracking configuration
 COOLDOWN_MINUTES="${CLAUDE_ACCOUNT_COOLDOWN_MINUTES:-5}"
+
+# OAuth token refresh configuration
+OAUTH_ENDPOINT="https://console.anthropic.com/v1/oauth/token"
+OAUTH_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 # Temp file tracking for cleanup
 TEMP_FILES=()
@@ -119,6 +123,92 @@ detect_credential_storage() {
   else
     # Linux/other: use file-based storage (Claude Code uses ~/.claude/.credentials.json)
     echo "file"
+  fi
+}
+
+# Refresh OAuth access token using refresh token
+# Returns JSON with new tokens on success, empty on failure
+# Usage: refresh_result=$(refresh_oauth_token "$refresh_token")
+refresh_oauth_token() {
+  local refresh_token="$1"
+
+  if [[ -z "$refresh_token" ]]; then
+    echo ""
+    return 1
+  fi
+
+  local response http_code body
+  local tmp_file
+  tmp_file=$(make_temp)
+
+  # Make the refresh request
+  http_code=$(curl -s -w "%{http_code}" -o "$tmp_file" \
+    -X POST "$OAUTH_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -d "{\"grant_type\":\"refresh_token\",\"refresh_token\":\"${refresh_token}\",\"client_id\":\"${OAUTH_CLIENT_ID}\"}" \
+    --connect-timeout 10 \
+    --max-time 30)
+
+  body=$(cat "$tmp_file")
+
+  if [[ "$http_code" == "200" ]] && echo "$body" | jq -e '.access_token' >/dev/null 2>&1; then
+    # Success - return the response JSON
+    echo "$body"
+    return 0
+  else
+    # Failure - log for debugging if verbose
+    if [[ -n "${CLAUDE_ACCOUNT_DEBUG:-}" ]]; then
+      echo "Token refresh failed: HTTP $http_code" >&2
+      echo "Response: $body" >&2
+    fi
+    echo ""
+    return 1
+  fi
+}
+
+# Check if an access token has expired based on timestamp
+# Returns 0 if expired, 1 if still valid
+is_token_expired() {
+  local expires_at="$1"
+
+  if [[ -z "$expires_at" || "$expires_at" == "0" ]]; then
+    # No expiry info - assume expired, let verification confirm
+    return 0
+  fi
+
+  local now_ms
+  now_ms=$(( $(date +%s) * 1000 ))
+
+  # Add 5 minute buffer - refresh proactively before actual expiry
+  local buffer_ms=300000
+  if [[ "$now_ms" -ge $(( expires_at - buffer_ms )) ]]; then
+    return 0  # Expired or about to expire
+  else
+    return 1  # Still valid
+  fi
+}
+
+# Verify an OAuth access token by calling the usage endpoint
+# Returns 0 if valid, 1 if invalid/expired
+verify_access_token() {
+  local access_token="$1"
+
+  if [[ -z "$access_token" ]]; then
+    return 1
+  fi
+
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $access_token" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    "https://api.anthropic.com/api/oauth/usage" \
+    --connect-timeout 5 \
+    --max-time 10)
+
+  if [[ "$http_code" == "200" ]]; then
+    return 0
+  else
+    return 1
   fi
 }
 
@@ -616,13 +706,85 @@ switch_account() {
 
   # Check we have credentials for the new account
   local prefix="CLAUDE_ACCOUNT_$(sanitize_email "$new_email")"
-  local access_token
+  local access_token refresh_token
   access_token=$(get_account_field "$new_email" "ACCESSTOKEN")
+  refresh_token=$(get_account_field "$new_email" "REFRESHTOKEN")
 
   if [[ -z "$access_token" ]]; then
     echo -e "${RED}Error: No credentials found for: ${new_email}${NC}"
     echo "The account metadata exists but tokens are missing."
     exit 1
+  fi
+
+  # Verify and refresh token if needed
+  local token_valid=false
+  local refreshed_tokens=""
+  local expires_at_val=""
+  expires_at_val=$(get_account_field "$new_email" "EXPIRESAT")
+
+  echo -e "${BLUE}Checking token status...${NC}"
+  local needs_refresh=false
+
+  # First check timestamp
+  if is_token_expired "$expires_at_val"; then
+    echo -e "${YELLOW}Token expired based on timestamp${NC}"
+    needs_refresh=true
+  else
+    # Token not expired - verify it's actually valid via API
+    echo -e "${BLUE}Verifying token with API...${NC}"
+    if verify_access_token "$access_token"; then
+      echo -e "${GREEN}Token verified${NC}"
+      token_valid=true
+    else
+      echo -e "${YELLOW}Token invalid (may have been revoked)${NC}"
+      needs_refresh=true
+    fi
+  fi
+
+  if [[ "$needs_refresh" == "true" ]]; then
+    echo -e "${BLUE}Attempting token refresh...${NC}"
+
+    if [[ -z "$refresh_token" ]]; then
+      echo -e "${RED}Error: No refresh token available for: ${new_email}${NC}"
+      echo "Please log in to this account and re-capture:"
+      echo "  1. Run 'claude' and log in as ${new_email}"
+      echo "  2. Run 'claude-account capture'"
+      exit 1
+    fi
+
+    refreshed_tokens=$(refresh_oauth_token "$refresh_token")
+
+    if [[ -n "$refreshed_tokens" ]]; then
+      echo -e "${GREEN}Token refreshed successfully${NC}"
+      token_valid=true
+
+      # Extract new token values
+      local new_access_token new_refresh_token new_expires_in
+      new_access_token=$(echo "$refreshed_tokens" | jq -r '.access_token')
+      new_refresh_token=$(echo "$refreshed_tokens" | jq -r '.refresh_token // empty')
+      new_expires_in=$(echo "$refreshed_tokens" | jq -r '.expires_in // 28800')
+
+      # Calculate new expiration timestamp (current time + expires_in seconds, in ms)
+      expires_at_val=$(( $(date +%s) * 1000 + new_expires_in * 1000 ))
+
+      # Update stored tokens in .env
+      update_env_line "${prefix}_ACCESSTOKEN" "$new_access_token"
+      update_env_line "${prefix}_EXPIRESAT" "$expires_at_val"
+      if [[ -n "$new_refresh_token" ]]; then
+        update_env_line "${prefix}_REFRESHTOKEN" "$new_refresh_token"
+        refresh_token="$new_refresh_token"
+      fi
+      access_token="$new_access_token"
+
+      echo -e "${BLUE}Updated stored credentials in ${ENV_FILE}${NC}"
+    else
+      echo -e "${RED}Error: Token refresh failed for: ${new_email}${NC}"
+      echo "The refresh token may have been invalidated."
+      echo "Please log in to this account and re-capture:"
+      echo "  1. Run 'claude' and log in as ${new_email}"
+      echo "  2. Run 'claude-account capture'"
+      exit 1
+    fi
   fi
 
   # Verify config file exists
@@ -671,16 +833,16 @@ switch_account() {
   mv "$temp_file" "$CLAUDE_CONFIG"
 
   # Build new credentials JSON and update keychain
-  local scopes_json expires_at_val
+  # Note: access_token, refresh_token, expires_at_val may have been updated by refresh above
+  local scopes_json
   scopes_json=$(get_account_field "$new_email" "SCOPES" | tr ',' '\n' | jq -R . | jq -s .)
-  expires_at_val=$(get_account_field "$new_email" "EXPIRESAT")
   # Default to 0 if empty (jq --argjson fails on empty string)
   [[ -z "$expires_at_val" ]] && expires_at_val="0"
 
   local new_credentials
   new_credentials=$(jq -n \
-    --arg accessToken "$(get_account_field "$new_email" "ACCESSTOKEN")" \
-    --arg refreshToken "$(get_account_field "$new_email" "REFRESHTOKEN")" \
+    --arg accessToken "$access_token" \
+    --arg refreshToken "$refresh_token" \
     --argjson expiresAt "$expires_at_val" \
     --argjson scopes "$scopes_json" \
     --arg subscriptionType "$(get_account_field "$new_email" "SUBSCRIPTIONTYPE")" \

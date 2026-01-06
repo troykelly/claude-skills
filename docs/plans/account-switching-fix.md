@@ -345,23 +345,23 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
 
 - [x] Add `refresh_oauth_token()` function
 - [x] Integrate into `switch_account()` flow
-- [x] Update both in-memory and stored credentials after refresh
+- [x] Update both .env file AND environment variables after refresh
 - [x] Handle refresh failures gracefully
 
-### Phase 4: Update Automatic Switch Hook
+### Phase 4: Update Automatic Switch Hook - COMPLETE
 
-- [ ] Update `plan-limit-account-switch.sh` to use new switch mechanism
-- [ ] Add token verification before auto-switch
-- [ ] Handle case where no valid accounts available
+- [x] Hook calls `claude-account switch` which now includes verification/refresh
+- [x] Token verification happens automatically before switch
+- [x] Graceful failure with re-capture instructions if refresh fails
 
 ---
 
-## Files to Modify
+## Files Modified
 
-| File | Changes |
-|------|---------|
-| `scripts/claude-account` | Add token verification, token refresh, improve switch flow |
-| `hooks/plan-limit-account-switch.sh` | Use updated switch mechanism |
+| File | Changes | Status |
+|------|---------|--------|
+| `scripts/claude-account` | Added token verification, token refresh, environment updates | ✅ Complete |
+| `hooks/plan-limit-account-switch.sh` | No changes needed - calls `claude-account switch` | ✅ Complete |
 
 ---
 

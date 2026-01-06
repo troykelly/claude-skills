@@ -767,7 +767,7 @@ switch_account() {
       # Calculate new expiration timestamp (current time + expires_in seconds, in ms)
       expires_at_val=$(( $(date +%s) * 1000 + new_expires_in * 1000 ))
 
-      # Update stored tokens in .env
+      # Update stored tokens in .env file
       update_env_line "${prefix}_ACCESSTOKEN" "$new_access_token"
       update_env_line "${prefix}_EXPIRESAT" "$expires_at_val"
       if [[ -n "$new_refresh_token" ]]; then
@@ -776,7 +776,14 @@ switch_account() {
       fi
       access_token="$new_access_token"
 
-      echo -e "${BLUE}Updated stored credentials in ${ENV_FILE}${NC}"
+      # Also update current environment so subsequent operations use fresh tokens
+      export "${prefix}_ACCESSTOKEN=$new_access_token"
+      export "${prefix}_EXPIRESAT=$expires_at_val"
+      if [[ -n "$new_refresh_token" ]]; then
+        export "${prefix}_REFRESHTOKEN=$new_refresh_token"
+      fi
+
+      echo -e "${BLUE}Updated stored credentials in ${ENV_FILE} and environment${NC}"
     else
       echo -e "${RED}Error: Token refresh failed for: ${new_email}${NC}"
       echo "The refresh token may have been invalidated."

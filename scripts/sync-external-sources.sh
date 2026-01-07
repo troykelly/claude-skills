@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # Configuration
-SOURCE_REPO="anthropics/claude-plugins-official"
+DEFAULT_SOURCE_REPO="anthropics/claude-plugins-official"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 EXTERNAL_DIR="${PROJECT_ROOT}/external"
@@ -74,24 +74,35 @@ log_verbose() {
 }
 
 # Artifacts to sync
-# Format: "source_path:dest_subdir:type"
+# Format: "repo:source_path:dest_subdir:type"
+# repo: GitHub owner/repo (use DEFAULT for anthropics/claude-plugins-official)
 # type: agent|skill
 declare -a SYNC_ITEMS=(
-  # pr-review-toolkit agents
-  "plugins/pr-review-toolkit/agents/silent-failure-hunter.md:agents:agent"
-  "plugins/pr-review-toolkit/agents/pr-test-analyzer.md:agents:agent"
-  "plugins/pr-review-toolkit/agents/type-design-analyzer.md:agents:agent"
-  "plugins/pr-review-toolkit/agents/code-simplifier.md:agents:agent"
-  "plugins/pr-review-toolkit/agents/comment-analyzer.md:agents:agent"
+  # pr-review-toolkit agents (from anthropics/claude-plugins-official)
+  "DEFAULT:plugins/pr-review-toolkit/agents/silent-failure-hunter.md:agents:agent"
+  "DEFAULT:plugins/pr-review-toolkit/agents/pr-test-analyzer.md:agents:agent"
+  "DEFAULT:plugins/pr-review-toolkit/agents/type-design-analyzer.md:agents:agent"
+  "DEFAULT:plugins/pr-review-toolkit/agents/code-simplifier.md:agents:agent"
+  "DEFAULT:plugins/pr-review-toolkit/agents/comment-analyzer.md:agents:agent"
 
-  # feature-dev agents
-  "plugins/feature-dev/agents/code-architect.md:agents:agent"
-  "plugins/feature-dev/agents/code-explorer.md:agents:agent"
+  # feature-dev agents (from anthropics/claude-plugins-official)
+  "DEFAULT:plugins/feature-dev/agents/code-architect.md:agents:agent"
+  "DEFAULT:plugins/feature-dev/agents/code-explorer.md:agents:agent"
 
-  # plugin-dev skills (directories)
-  "plugins/plugin-dev/skills/skill-development:skills:skill"
-  "plugins/plugin-dev/skills/hook-development:skills:skill"
-  "plugins/plugin-dev/skills/agent-development:skills:skill"
+  # plugin-dev skills (from anthropics/claude-plugins-official)
+  "DEFAULT:plugins/plugin-dev/skills/skill-development:skills:skill"
+  "DEFAULT:plugins/plugin-dev/skills/hook-development:skills:skill"
+  "DEFAULT:plugins/plugin-dev/skills/agent-development:skills:skill"
+
+  # frontend-design skill (from anthropics/claude-plugins-official)
+  "DEFAULT:plugins/frontend-design/skills/frontend-design:skills:skill"
+
+  # Sentry skills (from getsentry/sentry-for-claude)
+  "getsentry/sentry-for-claude:skills/sentry-code-review:skills:skill"
+  "getsentry/sentry-for-claude:skills/sentry-setup-ai-monitoring:skills:skill"
+  "getsentry/sentry-for-claude:skills/sentry-setup-logging:skills:skill"
+  "getsentry/sentry-for-claude:skills/sentry-setup-metrics:skills:skill"
+  "getsentry/sentry-for-claude:skills/sentry-setup-tracing:skills:skill"
 )
 
 # Check requirements
@@ -111,28 +122,35 @@ check_requirements() {
   log_success "Requirements satisfied"
 }
 
-# Get latest commit hash from source repo
-get_source_commit() {
-  gh api "repos/${SOURCE_REPO}/commits/main" --jq '.sha' 2>/dev/null
+# Resolve repo name (DEFAULT -> default repo)
+resolve_repo() {
+  local repo="$1"
+  if [ "$repo" = "DEFAULT" ]; then
+    echo "$DEFAULT_SOURCE_REPO"
+  else
+    echo "$repo"
+  fi
 }
 
-# Fetch a file from the source repo
+# Fetch a file from a repo
 fetch_file() {
-  local path="$1"
-  local dest="$2"
+  local repo="$1"
+  local path="$2"
+  local dest="$3"
 
-  log_verbose "Fetching: $path -> $dest"
+  repo=$(resolve_repo "$repo")
+  log_verbose "Fetching: ${repo}:${path} -> $dest"
 
   if [ "$DRY_RUN" = true ]; then
-    echo "  Would fetch: $path"
+    echo "  Would fetch: ${repo}:${path}"
     return 0
   fi
 
   local content
-  content=$(gh api "repos/${SOURCE_REPO}/contents/${path}" --jq '.content' 2>/dev/null)
+  content=$(gh api "repos/${repo}/contents/${path}" --jq '.content' 2>/dev/null)
 
   if [ -z "$content" ] || [ "$content" = "null" ]; then
-    log_warn "Could not fetch: $path (may be a directory)"
+    log_warn "Could not fetch: ${repo}:${path} (may be a directory)"
     return 1
   fi
 
@@ -141,15 +159,17 @@ fetch_file() {
   log_verbose "Saved: $dest"
 }
 
-# Fetch a directory recursively from the source repo
+# Fetch a directory recursively from a repo
 fetch_directory() {
-  local path="$1"
-  local dest="$2"
+  local repo="$1"
+  local path="$2"
+  local dest="$3"
 
-  log_verbose "Fetching directory: $path -> $dest"
+  repo=$(resolve_repo "$repo")
+  log_verbose "Fetching directory: ${repo}:${path} -> $dest"
 
   if [ "$DRY_RUN" = true ]; then
-    echo "  Would fetch directory: $path"
+    echo "  Would fetch directory: ${repo}:${path}"
     return 0
   fi
 
@@ -157,19 +177,20 @@ fetch_directory() {
 
   # Get directory contents
   local items
-  items=$(gh api "repos/${SOURCE_REPO}/contents/${path}" 2>/dev/null)
+  items=$(gh api "repos/${repo}/contents/${path}" 2>/dev/null)
 
   if [ -z "$items" ] || [ "$items" = "null" ]; then
-    log_warn "Could not list: $path"
+    log_warn "Could not list: ${repo}:${path}"
     return 1
   fi
 
-  # Process each item
+  # Process each item (pass repo through for recursive calls)
+  local resolved_repo="$repo"
   echo "$items" | jq -r '.[] | "\(.type)|\(.name)|\(.path)"' | while IFS='|' read -r type name item_path; do
     if [ "$type" = "file" ]; then
-      fetch_file "$item_path" "${dest}/${name}"
+      fetch_file "$resolved_repo" "$item_path" "${dest}/${name}"
     elif [ "$type" = "dir" ]; then
-      fetch_directory "$item_path" "${dest}/${name}"
+      fetch_directory "$resolved_repo" "$item_path" "${dest}/${name}"
     fi
   done
 }
@@ -177,7 +198,10 @@ fetch_directory() {
 # Add attribution header to agent files
 add_attribution_header() {
   local file="$1"
-  local source_path="$2"
+  local repo="$2"
+  local source_path="$3"
+
+  repo=$(resolve_repo "$repo")
 
   if [ "$DRY_RUN" = true ]; then
     return 0
@@ -187,8 +211,8 @@ add_attribution_header() {
     return 0
   fi
 
-  # Check if file already has attribution
-  if grep -q "SOURCE: ${SOURCE_REPO}" "$file" 2>/dev/null; then
+  # Check if file already has attribution (check for any SOURCE: line)
+  if grep -q "^# SOURCE:" "$file" 2>/dev/null; then
     log_verbose "Attribution already present: $file"
     return 0
   fi
@@ -198,7 +222,7 @@ add_attribution_header() {
   content=$(cat "$file")
 
   # Attribution block
-  local attribution="# SOURCE: ${SOURCE_REPO}
+  local attribution="# SOURCE: ${repo}
 # PATH: ${source_path}
 # DO NOT EDIT: This file is synced from external source
 "
@@ -230,7 +254,6 @@ EOF
 
 # Write sync metadata
 write_metadata() {
-  local commit_hash="$1"
   local timestamp
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -241,26 +264,25 @@ write_metadata() {
 
   mkdir -p "$(dirname "$METADATA_FILE")"
 
-  # Build synced paths array
-  local paths_json="["
+  # Build synced items array with full details
+  local items_json="["
   local first=true
   for item in "${SYNC_ITEMS[@]}"; do
-    IFS=':' read -r source_path dest_subdir item_type <<< "$item"
+    IFS=':' read -r repo source_path dest_subdir item_type <<< "$item"
+    repo=$(resolve_repo "$repo")
     if [ "$first" = true ]; then
       first=false
     else
-      paths_json+=","
+      items_json+=","
     fi
-    paths_json+="\"${source_path}\""
+    items_json+="{\"repo\":\"${repo}\",\"path\":\"${source_path}\",\"type\":\"${item_type}\"}"
   done
-  paths_json+="]"
+  items_json+="]"
 
   cat > "$METADATA_FILE" << EOF
 {
-  "source_repo": "${SOURCE_REPO}",
   "last_sync": "${timestamp}",
-  "commit_hash": "${commit_hash}",
-  "synced_paths": ${paths_json}
+  "synced_items": ${items_json}
 }
 EOF
 
@@ -269,29 +291,7 @@ EOF
 
 # Main sync function
 sync_all() {
-  log_info "Syncing from ${SOURCE_REPO}..."
-
-  # Get current commit
-  local commit_hash
-  commit_hash=$(get_source_commit)
-
-  if [ -z "$commit_hash" ]; then
-    log_error "Could not get source repository commit hash"
-    exit 1
-  fi
-
-  log_info "Source commit: ${commit_hash:0:8}"
-
-  # Check if already synced
-  if [ -f "$METADATA_FILE" ] && [ "$DRY_RUN" = false ]; then
-    local last_commit
-    last_commit=$(jq -r '.commit_hash' "$METADATA_FILE" 2>/dev/null || echo "")
-    if [ "$last_commit" = "$commit_hash" ]; then
-      log_success "Already up to date (${commit_hash:0:8})"
-      exit 0
-    fi
-    log_info "Updating from ${last_commit:0:8} to ${commit_hash:0:8}"
-  fi
+  log_info "Syncing external skills and agents..."
 
   # Create external directory
   if [ "$DRY_RUN" = false ]; then
@@ -302,25 +302,28 @@ sync_all() {
   # Process each sync item
   local synced_count=0
   for item in "${SYNC_ITEMS[@]}"; do
-    IFS=':' read -r source_path dest_subdir item_type <<< "$item"
+    IFS=':' read -r repo source_path dest_subdir item_type <<< "$item"
+
+    local resolved_repo
+    resolved_repo=$(resolve_repo "$repo")
 
     local dest_path="${EXTERNAL_DIR}/${dest_subdir}"
     local basename
     basename=$(basename "$source_path")
 
-    log_info "Syncing: $source_path"
+    log_info "Syncing: ${resolved_repo}:${source_path}"
 
     case $item_type in
       agent)
-        if fetch_file "$source_path" "${dest_path}/${basename}"; then
-          add_attribution_header "${dest_path}/${basename}" "$source_path"
+        if fetch_file "$repo" "$source_path" "${dest_path}/${basename}"; then
+          add_attribution_header "${dest_path}/${basename}" "$repo" "$source_path"
           ((synced_count++)) || true
         fi
         ;;
       skill)
-        if fetch_directory "$source_path" "${dest_path}/${basename}"; then
+        if fetch_directory "$repo" "$source_path" "${dest_path}/${basename}"; then
           # Add attribution to SKILL.md
-          add_attribution_header "${dest_path}/${basename}/SKILL.md" "${source_path}/SKILL.md"
+          add_attribution_header "${dest_path}/${basename}/SKILL.md" "$repo" "${source_path}/SKILL.md"
           ((synced_count++)) || true
         fi
         ;;
@@ -328,7 +331,7 @@ sync_all() {
   done
 
   # Write metadata
-  write_metadata "$commit_hash"
+  write_metadata
 
   if [ "$DRY_RUN" = true ]; then
     log_info "Dry run complete. No changes made."

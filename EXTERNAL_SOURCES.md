@@ -2,10 +2,16 @@
 
 This document tracks skills and agents sourced from external repositories.
 
-## Source Repository
+## Source Repositories
 
+### Primary Source
 **Repository:** [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official)
 **Description:** Anthropic-managed directory of high quality Claude Code Plugins
+**License:** See source repository for license terms
+
+### Additional Sources
+**Repository:** [getsentry/sentry-for-claude](https://github.com/getsentry/sentry-for-claude)
+**Description:** Official Sentry error monitoring integration for Claude Code
 **License:** See source repository for license terms
 
 ## Synced Artifacts
@@ -37,6 +43,22 @@ The following artifacts are synced from the official repository. **Do not edit t
 | `external/skills/hook-development/` | `plugins/plugin-dev/skills/hook-development/` | Hook creation and validation |
 | `external/skills/agent-development/` | `plugins/plugin-dev/skills/agent-development/` | Agent authoring guidance |
 
+### Skills (from `frontend-design` plugin)
+
+| Local Path | Source Path | Description |
+|------------|-------------|-------------|
+| `external/skills/frontend-design/` | `plugins/frontend-design/skills/frontend-design/` | Production-grade frontend interface design guidance |
+
+### Skills (from `getsentry/sentry-for-claude`)
+
+| Local Path | Source Path | Description |
+|------------|-------------|-------------|
+| `external/skills/sentry-code-review/` | `skills/sentry-code-review/` | Sentry code review integration |
+| `external/skills/sentry-setup-ai-monitoring/` | `skills/sentry-setup-ai-monitoring/` | AI monitoring setup for Sentry |
+| `external/skills/sentry-setup-logging/` | `skills/sentry-setup-logging/` | Logging setup for Sentry |
+| `external/skills/sentry-setup-metrics/` | `skills/sentry-setup-metrics/` | Metrics setup for Sentry |
+| `external/skills/sentry-setup-tracing/` | `skills/sentry-setup-tracing/` | Tracing setup for Sentry |
+
 ## Why These Artifacts
 
 ### Complementing Issue-Driven Development
@@ -50,6 +72,8 @@ The following artifacts are synced from the official repository. **Do not edit t
 | `comment-analyzer` | `inline-documentation` | Validates comment accuracy against code |
 | `code-architect` | `pre-work-research` | Provides architectural design before coding |
 | `code-explorer` | `session-start` | Deep codebase exploration for understanding |
+| `frontend-design` | UI/frontend work | High-quality, distinctive frontend interface design |
+| `sentry-*` | Error monitoring | Sentry error tracking, logging, metrics, and tracing integration |
 
 ### Plugin Development Helpers
 
@@ -57,6 +81,19 @@ The `plugin-dev` skills help us maintain and improve this plugin itself:
 - `skill-development` - For writing new skills
 - `hook-development` - For creating/modifying hooks
 - `agent-development` - For creating new agents
+
+### Frontend Design
+
+The `frontend-design` skill provides guidance for creating production-grade, visually distinctive frontend interfaces that avoid generic AI aesthetics.
+
+### Sentry Integration
+
+The Sentry skills from `getsentry/sentry-for-claude` provide comprehensive error monitoring integration:
+- **sentry-code-review** - Analyze and validate Sentry code review feedback
+- **sentry-setup-ai-monitoring** - Configure AI/ML model monitoring
+- **sentry-setup-logging** - Set up structured logging
+- **sentry-setup-metrics** - Configure custom metrics
+- **sentry-setup-tracing** - Set up distributed tracing
 
 ## Sync Process
 
@@ -66,11 +103,16 @@ Run the sync script to update external sources:
 ./scripts/sync-external-sources.sh
 ```
 
+Options:
+- `--dry-run` - Show what would be synced without making changes
+- `--verbose` - Show detailed progress
+
 The script:
-1. Fetches latest from `anthropics/claude-plugins-official`
+1. Fetches from multiple source repositories
 2. Copies specified artifacts to `external/`
 3. Preserves directory structure
-4. Logs sync timestamp and commit hash
+4. Adds attribution headers to synced files
+5. Logs sync metadata
 
 ## Modification Policy
 

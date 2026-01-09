@@ -1,6 +1,6 @@
 # Issue-Driven Development
 
-[![Version](https://img.shields.io/badge/version-1.7.3-blue.svg)](https://github.com/troykelly/claude-skills)
+[![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)](https://github.com/troykelly/claude-skills)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Skills](https://img.shields.io/badge/skills-52-purple.svg)](#skills-reference)
 [![Agents](https://img.shields.io/badge/agents-9-orange.svg)](#agents)
@@ -181,6 +181,7 @@ Checking Claude account status...
 ```bash
 claude-autonomous                    # Work on all open issues
 claude-autonomous --epic 42          # Focus on specific epic
+claude-autonomous --pr               # Resolve open PRs (CI fixes, reviews, merges)
 claude-autonomous --new              # Start fresh, wait for instructions
 claude-autonomous --continue         # Resume most recent session
 claude-autonomous --resume           # Open session picker
@@ -192,6 +193,7 @@ claude-autonomous --list             # Show session history
 | Option | Description |
 |--------|-------------|
 | `-e, --epic <N>` | Focus on specific epic (validates issue exists and is open) |
+| `-p, --pr` | PR resolution mode: fix CI failures, verify reviews, merge PRs |
 | `-n, --new` | Interactive mode: bootstrap environment, then wait |
 | `-c, --continue` | Resume most recent session |
 | `--resume [ID]` | Open session picker or resume specific session |
@@ -399,6 +401,7 @@ done
 |----------|---------|---------|
 | `GITHUB_TOKEN` | Auto from `gh auth token` | GitHub API token |
 | `MAX_CRASHES` | `10` | Crash limit before giving up |
+| `CLAUDE_MODEL` | `claude-opus-4-5-20251101` | Model for autonomous operations |
 | `PEXELS_API_KEY` | - | For `pexels-media` skill |
 
 ### GitHub Project Fields

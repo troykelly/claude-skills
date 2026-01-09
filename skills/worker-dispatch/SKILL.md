@@ -1,10 +1,11 @@
 ---
 name: worker-dispatch
-description: Use to spawn isolated worker processes for autonomous issue work. Creates git worktrees, constructs worker prompts, and handles worker lifecycle.
+description: Use to spawn isolated worker processes for autonomous issue work. Uses Task tool with run_in_background for parallel execution and TaskOutput for monitoring.
 allowed-tools:
   - Bash
   - Read
   - Task
+  - TaskOutput
   - mcp__github__*
   - mcp__memory__*
 model: opus
@@ -14,7 +15,7 @@ model: opus
 
 ## Overview
 
-Spawns and manages worker Claude processes in isolated git worktrees. Workers are disposable - if they fail, spawn another.
+Spawns and manages worker Claude agents using the **Task tool with `run_in_background: true`**. Workers run as parallel background agents monitored via **TaskOutput**.
 
 **Core principle:** Workers are isolated, scoped, and expendable. State lives in GitHub, not in workers.
 
@@ -22,16 +23,16 @@ Spawns and manages worker Claude processes in isolated git worktrees. Workers ar
 
 ## State Management
 
-**CRITICAL:** Worker state is stored in GitHub. NO local state files for tracking.
+**CRITICAL:** Worker state is stored in GitHub. Task IDs are ephemeral orchestration state.
 
 | State | Location | Purpose |
 |-------|----------|---------|
 | Worker assignment | Issue comment | Who is working on what |
 | Worker status | Project Board | In Progress, Done, etc. |
-| Process logs | Local (ephemeral) | Debugging only |
-| Process PIDs | Local (ephemeral) | Process management only |
+| Task IDs | Orchestrator memory | Monitor running agents |
+| Agent output | TaskOutput tool | Check progress and results |
 
-Local files (logs, PIDs) are ephemeral - they exist only for the current orchestration session. All persistent state is in GitHub.
+Task IDs exist only for the current orchestration session. All persistent state is in GitHub.
 
 ## Worker Architecture
 
@@ -179,218 +180,366 @@ PROMPT
 }
 ```
 
-### Step 4: Spawn Process
+### Step 4: Spawn Worker Agent
 
-```bash
-spawn_worker_process() {
-  issue=$1
-  worker_id=$2
-  worktree_path=$3
-  prompt=$4
+Use the **Task tool** with `run_in_background: true` to spawn a parallel worker agent:
 
-  # Create local ephemeral directories
-  mkdir -p ".claude/logs" ".claude/pids"
-  log_file=".claude/logs/$worker_id.log"
-  pid_file=".claude/pids/$worker_id.pid"
-
-  (
-    cd "$worktree_path"
-    claude -p "$prompt" \
-      --allowedTools "Bash,Read,Edit,Write,Grep,Glob,mcp__git__*,mcp__github__*,mcp__memory__*,WebFetch,WebSearch" \
-      --max-turns 100 \
-      --permission-mode acceptEdits \
-      --output-format json \
-      2>&1
-  ) > "$log_file" &
-
-  worker_pid=$!
-  echo "$worker_pid" > "$pid_file"
-
-  echo "Spawned worker $worker_id (PID: $worker_pid) for issue #$issue"
-}
 ```
+Task(
+  description: "Issue #[ISSUE] worker",
+  prompt: [WORKER_PROMPT],
+  subagent_type: "general-purpose",
+  run_in_background: true
+)
+```
+
+**Returns:** A `task_id` (e.g., `aa93f22`) used to monitor the agent.
+
+**Example invocation:**
+
+```markdown
+I'm spawning a worker for issue #123.
+
+[Invoke Task tool with:]
+- description: "Issue #123 worker"
+- prompt: [constructed worker prompt]
+- subagent_type: "general-purpose"
+- run_in_background: true
+
+Task returns task_id: aa93f22
+Storing task_id for monitoring.
+```
+
+### Spawning Multiple Workers in Parallel
+
+To spawn multiple workers simultaneously, invoke multiple Task tools in a **single message**:
+
+```markdown
+Spawning 3 workers in parallel for issues #123, #124, #125.
+
+[Invoke 3 Task tools in same message:]
+
+Task 1:
+- description: "Issue #123 worker"
+- prompt: [prompt for #123]
+- subagent_type: "general-purpose"
+- run_in_background: true
+
+Task 2:
+- description: "Issue #124 worker"
+- prompt: [prompt for #124]
+- subagent_type: "general-purpose"
+- run_in_background: true
+
+Task 3:
+- description: "Issue #125 worker"
+- prompt: [prompt for #125]
+- subagent_type: "general-purpose"
+- run_in_background: true
+```
+
+**CRITICAL:** All Task invocations in the same message start concurrently.
 
 ### Complete Spawn Function
 
-```bash
-spawn_worker() {
-  issue=$1
-  context_file=${2:-""}
-  attempt=${3:-1}
-  research_context=${4:-""}
+```markdown
+## Spawning a Worker
 
-  worker_id="worker-$(date +%s)-$issue"
-  worktree_path=$(create_worktree "$issue" "$worker_id")
-  prompt=$(construct_worker_prompt "$issue" "$worker_id" "$context_file" "$attempt" "$research_context")
+1. **Register in GitHub FIRST** (before spawning)
+   - Post assignment comment to issue
+   - Update project board status to "In Progress"
 
-  # Register in GitHub BEFORE spawning
-  register_worker "$worker_id" "$issue" "$worktree_path"
+2. **Construct worker prompt** with:
+   - Issue number and context
+   - Worker identity
+   - Constraints and exit conditions
+   - Any handover context from previous attempts
 
-  # Spawn process
-  spawn_worker_process "$issue" "$worker_id" "$worktree_path" "$prompt"
+3. **Invoke Task tool:**
+   Task(
+     description: "Issue #[ISSUE] worker",
+     prompt: [WORKER_PROMPT],
+     subagent_type: "general-purpose",
+     run_in_background: true
+   )
 
-  log_activity "worker_spawned" "$worker_id" "$issue"
-}
+4. **Store the returned task_id** for monitoring
+
+5. **Log activity** to tracking issue
 ```
 
-## Tool Scoping
+## Worker Agent Types
 
-### Standard Worker (Full Implementation)
+Workers are spawned as `general-purpose` subagents by default. The worker prompt defines their behavior and constraints.
 
-```bash
---allowedTools "Bash,Read,Edit,Write,Grep,Glob,mcp__git__*,mcp__github__*,mcp__memory__*,WebFetch,WebSearch"
-```
-
-### Research Worker (Read-Only)
-
-```bash
---allowedTools "Read,Grep,Glob,WebFetch,WebSearch,mcp__memory__*,mcp__github__get_issue,mcp__github__get_pull_request"
-```
-
-### Review Worker (No Edits)
-
-```bash
---allowedTools "Read,Grep,Glob,Bash(pnpm test:*),Bash(pnpm lint:*)"
-```
+| Worker Type | Subagent Type | Purpose |
+|-------------|---------------|---------|
+| Standard Worker | `general-purpose` | Full implementation with all tools |
+| Research Worker | `Explore` | Read-only codebase investigation |
+| Review Worker | Custom subagent | Code review without edits |
 
 ## Checking Worker Status
 
-Check both GitHub and local PID:
+Use **TaskOutput** with `block: false` for non-blocking status checks:
 
-```bash
-check_worker_status() {
-  worker_id=$1
-  issue=$2
+```
+TaskOutput(
+  task_id: "[TASK_ID]",
+  block: false,
+  timeout: 1000
+)
+```
 
-  pid_file=".claude/pids/$worker_id.pid"
+### Status Check Pattern
 
-  if [ ! -f "$pid_file" ]; then
-    echo "unknown"
-    return
-  fi
+```markdown
+## Checking Worker Status
 
-  pid=$(cat "$pid_file")
+For each active worker task_id:
 
-  if ! kill -0 "$pid" 2>/dev/null; then
-    # Process exited - check GitHub for status
-    pr_exists=$(gh pr list --head "feature/$issue-*" --json number --jq 'length')
+1. **Invoke TaskOutput (non-blocking):**
+   TaskOutput(task_id: "aa93f22", block: false)
 
-    if [ "$pr_exists" -gt 0 ]; then
-      echo "completed"
-    else
-      # Check issue comments for status
-      log_file=".claude/logs/$worker_id.log"
-      if [ -f "$log_file" ]; then
-        if grep -q 'handover' "$log_file"; then
-          echo "handover_needed"
-        elif grep -q 'blocked' "$log_file"; then
-          echo "blocked"
-        else
-          echo "failed"
-        fi
-      else
-        echo "unknown"
-      fi
-    fi
-  else
-    echo "running"
-  fi
-}
+2. **Interpret result:**
+   - "Task is still running..." → Worker active, continue monitoring
+   - Task completed with output → Worker finished, check result
+
+3. **If completed, verify GitHub state:**
+   - Check if PR exists: `gh pr list --head "feature/[ISSUE]-*"`
+   - Check issue comments for completion/handover/blocked markers
+```
+
+### Monitoring Multiple Workers
+
+```markdown
+## Monitoring Loop
+
+For each active task_id in [aa93f22, b51e54b, c72f3d1]:
+
+TaskOutput(task_id: "aa93f22", block: false)
+TaskOutput(task_id: "b51e54b", block: false)
+TaskOutput(task_id: "c72f3d1", block: false)
+
+[All three checks happen in parallel if invoked in same message]
+
+Results:
+- aa93f22: "Task is still running..." → Continue monitoring
+- b51e54b: Completed → Check GitHub for PR
+- c72f3d1: "Task is still running..." → Continue monitoring
 ```
 
 ## Worker Cleanup
 
-```bash
-cleanup_worker() {
-  worker_id=$1
-  issue=$2
-  keep_worktree=${3:-false}
+When a worker completes (detected via TaskOutput), clean up GitHub state:
 
-  worktree="../$(basename $PWD)-worker-$issue"
+```markdown
+## Cleanup Steps
 
-  # Remove worktree (unless keeping for inspection)
-  if [ "$keep_worktree" = "false" ] && [ -d "$worktree" ]; then
-    git worktree remove "$worktree" --force 2>/dev/null || true
-    git worktree prune
-  fi
+1. **Remove task_id from active list** (orchestrator memory)
 
-  # Clean up local ephemeral files
-  rm -f ".claude/pids/$worker_id.pid"
+2. **Post cleanup comment to issue:**
+   ```bash
+   gh issue comment "$ISSUE" --body "<!-- WORKER:ASSIGNED -->
+   \`\`\`json
+   {\"assigned\": false, \"cleared_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
+   \`\`\`
+   <!-- /WORKER:ASSIGNED -->
 
-  # Post cleanup comment to issue
-  gh issue comment "$issue" --body "<!-- WORKER:ASSIGNED -->
-\`\`\`json
-{\"assigned\": false, \"cleared_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-\`\`\`
-<!-- /WORKER:ASSIGNED -->
+   **Worker Completed**
+   - **Task ID:** \`[TASK_ID]\`
+   - **Cleared:** [TIMESTAMP]
+   - **Result:** [COMPLETED|BLOCKED|HANDOVER]"
+   ```
 
-**Worker Cleaned Up**
-- **Worker ID:** \`$worker_id\`
-- **Cleared:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
----
-*Orchestrator: $ORCHESTRATION_ID*"
-
-  log_activity "worker_cleaned" "$worker_id" "$issue"
-}
+3. **Update project board** based on result:
+   - PR created → "In Review"
+   - Blocked → "Blocked"
+   - Handover needed → Keep "In Progress", spawn replacement
 ```
 
 ## Replacement Worker (After Handover)
 
-```bash
-spawn_replacement_worker() {
-  old_worker_id=$1
-  issue=$2
-  worktree=$3
+When a worker signals handover needed:
 
-  # Get handover context from issue comments
-  handover_context=$(gh api "/repos/$OWNER/$REPO/issues/$issue/comments" \
-    --jq '[.[] | select(.body | contains("<!-- HANDOVER:START -->"))] | last | .body' 2>/dev/null || echo "")
+```markdown
+## Spawning Replacement
 
-  # Cleanup old worker but KEEP worktree
-  cleanup_worker "$old_worker_id" "$issue" true
+1. **Get handover context from issue comments:**
+   ```bash
+   gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
+     --jq '[.[] | select(.body | contains("<!-- HANDOVER:START -->"))] | last | .body'
+   ```
 
-  # Spawn replacement with handover context
-  new_worker_id="worker-$(date +%s)-$issue"
-  attempt=$(($(get_attempt_count "$issue") + 1))
+2. **Construct new prompt** including handover context
 
-  prompt=$(construct_worker_prompt "$issue" "$new_worker_id" "" "$attempt" "$handover_context")
-  register_worker "$new_worker_id" "$issue" "$worktree"
-  spawn_worker_process "$issue" "$new_worker_id" "$worktree" "$prompt"
+3. **Spawn replacement with Task tool:**
+   Task(
+     description: "Issue #[ISSUE] worker (attempt [N])",
+     prompt: [PROMPT_WITH_HANDOVER_CONTEXT],
+     subagent_type: "general-purpose",
+     run_in_background: true
+   )
 
-  log_activity "worker_replacement" "$new_worker_id" "$issue" "$old_worker_id"
-}
+4. **Store new task_id**, remove old task_id from active list
 ```
 
 ## Parallel Dispatch
 
+Dispatch multiple workers in a single message for true parallelism:
+
+```markdown
+## Dispatching Available Slots
+
+1. **Count current workers:**
+   - Query project board for "In Progress" items
+   - max_workers = 5
+   - available = max_workers - current
+
+2. **Get pending issues:**
+   - Query project board for "Ready" items
+   - Take up to `available` issues
+
+3. **Dispatch all in ONE message:**
+
+   [For 3 available slots with issues #123, #124, #125:]
+
+   Task(description: "Issue #123 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+   Task(description: "Issue #124 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+   Task(description: "Issue #125 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+
+4. **Store all returned task_ids** for monitoring
+
+**CRITICAL:** Invoke all Task tools in the SAME message for concurrent execution.
+```
+
+## PR Workers
+
+PR workers have a different lifecycle than issue workers. They resolve existing PRs rather than implementing new features.
+
+### PR Worker vs Issue Worker
+
+| Aspect | Issue Worker | PR Worker |
+|--------|--------------|-----------|
+| Goal | Implement feature, create PR | Resolve existing PR |
+| Branch | Creates new feature branch | Checks out existing PR branch |
+| Worktree | `../project-worker-[ISSUE]` | `../project-pr-[PR_NUMBER]` |
+| Registration | Posts to issue | Posts to PR |
+| Exit condition | PR created | PR merged or blocked |
+
+### Spawning a PR Worker
+
 ```bash
-dispatch_available_slots() {
-  max_workers=5
+spawn_pr_worker() {
+  pr=$1
 
-  # Count current workers from project board (In Progress status)
-  current=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq '[.items[] | select(.status.name == "In Progress")] | length')
+  # Get PR details
+  PR_JSON=$(gh pr view "$pr" --json number,headRefName,title)
+  PR_BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
 
-  available=$((max_workers - current))
+  worker_id="pr-worker-$(date +%s)-$pr"
+  worktree_path="../$(basename $PWD)-pr-$pr"
 
-  if [ "$available" -le 0 ]; then
-    echo "No worker slots available ($current/$max_workers active)"
-    return
-  fi
+  # Create worktree from the PR's branch
+  git fetch origin "$PR_BRANCH"
+  git worktree add "$worktree_path" "origin/$PR_BRANCH"
 
-  echo "Dispatching up to $available workers..."
+  echo "Created PR worktree: $worktree_path on branch $PR_BRANCH"
+}
+```
 
-  for i in $(seq 1 $available); do
-    next_issue=$(get_next_pending_issue)
+### PR Worker Prompt Template
 
-    if [ -z "$next_issue" ]; then
-      echo "No more pending issues"
-      break
-    fi
+```bash
+construct_pr_worker_prompt() {
+  pr=$1
+  worker_id=$2
+  worktree_path=$3
 
-    spawn_worker "$next_issue"
-  done
+  cat <<PROMPT
+You are a PR resolution worker. Your task is to resolve PR #$pr.
+
+## Worker Identity
+- **Worker ID:** $worker_id
+- **PR:** #$pr
+- **Worktree:** $worktree_path
+
+## Your Mission
+Resolve PR #$pr through its full lifecycle:
+
+1. **Check CI Status** - \`gh pr checks $pr\`
+   - If ANY check is failing: investigate logs, fix code, push, wait for green
+   - Continue fixing until ALL checks pass
+
+2. **Verify Review Artifact** - Check linked issue for review comment
+   - Look for structured review (<!-- REVIEW:START --> markers)
+   - If missing: perform comprehensive code review and post artifact
+
+3. **Check Merge Eligibility**
+   - Check for 'do-not-merge' label → Skip merge, report blocked
+   - Check for comments blocking merge → Skip merge, report blocked
+   - If merge is permitted: \`gh pr merge $pr --squash --delete-branch\`
+
+4. **Report Result**
+   - Post completion comment to PR
+   - Update linked issue status if applicable
+
+## Constraints
+- Only fix code directly related to CI failures
+- Always push to the existing PR branch (do not create new branches)
+- Use 'gh pr merge' with --squash --delete-branch
+
+## Exit Conditions
+Exit when ANY of these occur:
+1. **PR Merged** - Resolution complete
+2. **Blocked** - Cannot proceed (label, comment, or external dependency)
+3. **Turns Exhausted** - Approaching 100 turns, prepare handover
+
+## Begin
+Start by checking CI status: \`gh pr checks $pr\`
+PROMPT
+}
+```
+
+### Spawning Multiple PR Workers
+
+```markdown
+## Dispatching PR Workers
+
+1. **Get actionable PRs:**
+   - Exclude release/* branches
+   - Exclude release-placeholder label
+   - Exclude do-not-merge label
+
+2. **Create worktrees for each PR**
+
+3. **Dispatch all in ONE message:**
+
+   Task(description: "PR #123 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+   Task(description: "PR #124 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+
+4. **Store task_ids** for monitoring
+```
+
+### PR Worker Cleanup
+
+```bash
+cleanup_pr_worker() {
+  pr=$1
+  worktree_path=$2
+  result=$3  # MERGED or BLOCKED
+
+  # Post result comment to PR
+  gh pr comment "$pr" --body "## PR Worker Complete
+
+**Result:** $result
+**Worker ID:** $worker_id
+**Completed:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+---
+*Orchestrator*"
+
+  # Remove worktree
+  git worktree remove "$worktree_path" --force 2>/dev/null || true
 }
 ```
 
@@ -398,27 +547,48 @@ dispatch_available_slots() {
 
 When spawning a worker:
 
-- [ ] Worktree created successfully
-- [ ] Branch created/checked out
 - [ ] Worker registered in GitHub (issue comment)
 - [ ] Project board status updated to In Progress
 - [ ] Worker prompt constructed with all context
-- [ ] Appropriate tool scoping applied
-- [ ] Process spawned in background
-- [ ] Activity logged
+- [ ] Task tool invoked with `run_in_background: true`
+- [ ] Returned task_id stored for monitoring
+- [ ] Activity logged to tracking issue
+
+When monitoring workers:
+
+- [ ] TaskOutput invoked with `block: false`
+- [ ] Multiple TaskOutput calls in same message for parallelism
+- [ ] Completed workers detected and handled
+- [ ] GitHub state verified (PR exists, comments checked)
 
 When cleaning up:
 
-- [ ] Worker process terminated (or already exited)
-- [ ] Worktree removed (unless keeping for inspection)
+- [ ] Task_id removed from active list
 - [ ] Cleanup comment posted to issue
+- [ ] Project board status updated
+- [ ] Activity logged
+
+When spawning a PR worker:
+
+- [ ] PR worktree created from PR branch
+- [ ] PR worker prompt constructed
+- [ ] Task tool invoked with `run_in_background: true`
+- [ ] Returned task_id stored for monitoring
+
+When PR worker completes:
+
+- [ ] Task_id removed from active list
+- [ ] Result comment posted to PR
+- [ ] Worktree cleaned up
 - [ ] Activity logged
 
 ## Integration
 
 This skill is used by:
 - `autonomous-orchestration` - Main orchestration loop
+- `claude-autonomous --pr` - PR resolution mode
 
 This skill uses:
 - `worker-protocol` - Behavior injected into prompts
 - `worker-handover` - Handover context format
+- `ci-monitoring` - CI failure investigation (for PR workers)

@@ -9,6 +9,7 @@
 #
 # Options:
 #   -e, --epic <N>       Focus on specific epic number
+#   -p, --pr [N,N,...]   Focus on resolving PRs (comma-separated, or all if omitted)
 #   -n, --new            Interactive mode: bootstrap and wait for instructions
 #   -c, --continue       Resume the most recent session (uses Claude's native --continue)
 #   --resume [ID]        Resume a session: opens Claude's picker, or resumes specific ID
@@ -19,29 +20,37 @@
 #
 # Environment Variables:
 #   WORK_EPIC            Same as --epic
+#   WORK_PRS             Same as --pr (comma-separated PR numbers)
 #   GITHUB_TOKEN         GitHub token for MCP servers (auto-fetched from gh if not set)
 #   MAX_CRASHES          Maximum crashes before giving up (default: 10)
 #   CLAUDE_ACCOUNT_COOLDOWN_MINUTES  Cooldown after account exhaustion (default: 5)
 #   CLAUDE_AUTONOMOUS_MAX_SWITCHES   Max account switches per session (default: 10)
 #   CLAUDE_CONFIG_DIR    Claude Code config directory (set by Claude Code in devcontainers)
+#   CLAUDE_MODEL         Model to use (default: claude-opus-4-5-20251101)
 #
 # Note: Uses claude-opus-4-5-20251101 (Opus 4.5) as the default model
 #
 # Examples:
 #   claude-autonomous                    # Work on all issues
 #   claude-autonomous --epic 42          # Focus on Epic #42
+#   claude-autonomous --pr               # Resolve all open PRs
+#   claude-autonomous --pr 123,456       # Resolve specific PRs
 #   claude-autonomous --new              # Bootstrap and wait for instructions
 #   claude-autonomous --continue         # Resume most recent session
 #   claude-autonomous --resume           # Open Claude's session picker
 #   claude-autonomous --list             # Show worktree history
 #   WORK_EPIC=10 claude-autonomous       # Focus on Epic #10
+#   WORK_PRS=123,456 claude-autonomous   # Resolve specific PRs
 #
 # Documentation: https://github.com/troykelly/claude-skills
 
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.7.3"
+VERSION="1.8.0"
+
+# Model to use for autonomous operations (can be overridden via environment)
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5-20251101}"
 
 # Colors
 RED='\033[0;31m'
@@ -187,6 +196,8 @@ trap '' SIGTERM SIGINT
 # Defaults
 REPO_PATH=""
 EPIC=""
+PRS=""
+PR_MODE=false
 NEW_MODE=false
 CONTINUE_MODE=false
 RESUME_SESSION=""
@@ -205,6 +216,18 @@ while [[ $# -gt 0 ]]; do
       fi
       EPIC="$2"
       shift 2
+      ;;
+    -p|--pr)
+      PR_MODE=true
+      # Check if next arg is a PR list (not another flag)
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        PRS="$2"
+        shift 2
+      else
+        # No PRs provided - will target all open PRs
+        PRS=""
+        shift
+      fi
       ;;
     -n|--new)
       NEW_MODE=true
@@ -294,6 +317,12 @@ done
 # Use WORK_EPIC env var if --epic not provided
 EPIC="${EPIC:-${WORK_EPIC:-}}"
 
+# Use WORK_PRS env var if --pr not provided with specific PRs
+if [[ -n "${WORK_PRS:-}" && -z "$PRS" ]]; then
+  PRS="${WORK_PRS}"
+  PR_MODE=true
+fi
+
 # Session log format: timestamp session_id repo_name worktree_path details
 # Example: 2026-01-03T12:00:00+00:00 abc-123 my-repo /tmp/claude-worktrees/my-repo/abc-123 epic=#42 "Title"
 
@@ -334,12 +363,12 @@ run_with_crash_recovery() {
     if [[ "$first_run" == "true" ]]; then
       first_run=false
       if [[ -n "$initial_prompt" ]]; then
-        claude --dangerously-skip-permissions --session-id "${sid}" "${initial_prompt}" || exit_code=$?
+        claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --session-id "${sid}" "${initial_prompt}" || exit_code=$?
       else
-        claude --dangerously-skip-permissions --resume "${sid}" || exit_code=$?
+        claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --resume "${sid}" || exit_code=$?
       fi
     else
-      claude --dangerously-skip-permissions --resume "${sid}" "$msg" || exit_code=$?
+      claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --resume "${sid}" "$msg" || exit_code=$?
     fi
 
     # Exit code 0 means successful completion
@@ -401,7 +430,7 @@ if [[ "$CONTINUE_MODE" == "true" ]]; then
     total_crashes=0
     while true; do
       exit_code=0
-      claude --dangerously-skip-permissions --continue || exit_code=$?
+      claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --continue || exit_code=$?
       if [[ $exit_code -eq 0 ]]; then
         echo -e "${GREEN}Session completed successfully${NC}"
         exit 0
@@ -928,6 +957,13 @@ else
   echo -e "${GREEN}GITHUB_TOKEN already set${NC}"
 fi
 
+# Mutual exclusion: --epic and --pr cannot be used together
+if [[ -n "$EPIC" && "$PR_MODE" == "true" ]]; then
+  echo -e "${RED}Error: --epic and --pr cannot be used together${NC}"
+  echo "Use --epic to work on issues, or --pr to resolve pull requests."
+  exit 1
+fi
+
 # Validate epic issue exists and is open (if specified)
 if [[ -n "$EPIC" ]]; then
   echo -e "${YELLOW}Validating Epic #${EPIC}...${NC}"
@@ -955,6 +991,94 @@ if [[ -n "$EPIC" ]]; then
   fi
 
   echo -e "${GREEN}Epic #${EPIC} validated: ${ISSUE_TITLE}${NC}"
+fi
+
+# Validate and discover PRs (if --pr mode)
+PR_LIST=""
+PR_COUNT=0
+if [[ "$PR_MODE" == "true" ]]; then
+  echo -e "${YELLOW}Discovering PRs to resolve...${NC}"
+
+  if [[ -n "$PRS" ]]; then
+    # Validate specific PRs provided by user
+    IFS=',' read -ra PR_ARRAY <<< "$PRS"
+    VALID_PRS=()
+
+    for pr in "${PR_ARRAY[@]}"; do
+      pr=$(echo "$pr" | tr -d ' ')  # Trim whitespace
+      [[ -z "$pr" ]] && continue
+
+      PR_JSON=$(gh pr view "$pr" --json number,title,state,headRefName,labels 2>/dev/null) || {
+        echo -e "${YELLOW}Warning: PR #${pr} not found, skipping${NC}"
+        continue
+      }
+
+      PR_STATE=$(echo "$PR_JSON" | jq -r '.state')
+      PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+      PR_BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+
+      if [[ "$PR_STATE" != "OPEN" ]]; then
+        echo -e "${YELLOW}Warning: PR #${pr} is ${PR_STATE}, skipping${NC}"
+        continue
+      fi
+
+      # Check for exclusion labels
+      HAS_EXCLUDE_LABEL=$(echo "$PR_JSON" | jq -r '.labels | map(.name) | if index("release-placeholder") or index("do-not-merge") then "yes" else "no" end')
+      if [[ "$HAS_EXCLUDE_LABEL" == "yes" ]]; then
+        echo -e "${YELLOW}Warning: PR #${pr} has exclusion label, skipping${NC}"
+        continue
+      fi
+
+      # Check for release branch
+      if [[ "$PR_BRANCH" == release/* ]]; then
+        echo -e "${YELLOW}Warning: PR #${pr} is a release branch, skipping${NC}"
+        continue
+      fi
+
+      echo -e "  ${GREEN}✓${NC} PR #${pr}: ${PR_TITLE}"
+      VALID_PRS+=("$pr")
+    done
+
+    if [[ ${#VALID_PRS[@]} -eq 0 ]]; then
+      echo -e "${RED}Error: No valid PRs to resolve${NC}"
+      exit 1
+    fi
+
+    PR_LIST=$(IFS=','; echo "${VALID_PRS[*]}")
+    PR_COUNT=${#VALID_PRS[@]}
+  else
+    # Discover all open PRs excluding release branches and specific labels
+    echo -e "${BLUE}Finding all actionable open PRs...${NC}"
+
+    ALL_PRS=$(gh pr list --json number,title,headRefName,labels --jq '
+      [.[] | select(
+        (.headRefName | startswith("release/") | not) and
+        (.labels | map(.name) | index("release-placeholder") | not) and
+        (.labels | map(.name) | index("do-not-merge") | not)
+      )]
+    ')
+
+    PR_COUNT=$(echo "$ALL_PRS" | jq 'length')
+
+    if [[ "$PR_COUNT" -eq 0 ]]; then
+      echo -e "${YELLOW}No actionable PRs found${NC}"
+      echo ""
+      echo "All PRs are either:"
+      echo "  - On release/* branches"
+      echo "  - Have 'release-placeholder' label"
+      echo "  - Have 'do-not-merge' label"
+      exit 0
+    fi
+
+    # Build comma-separated list and display
+    PR_LIST=$(echo "$ALL_PRS" | jq -r '.[].number' | tr '\n' ',' | sed 's/,$//')
+
+    echo -e "${GREEN}Found ${PR_COUNT} actionable PRs:${NC}"
+    echo "$ALL_PRS" | jq -r '.[] | "  #\(.number): \(.title)"'
+  fi
+
+  echo ""
+  echo -e "${GREEN}PRs to resolve: ${PR_LIST}${NC}"
 fi
 
 # Generate session ID (date +%s%N is GNU-only, use $RANDOM for macOS fallback)
@@ -989,6 +1113,8 @@ chmod 700 /tmp/claude-worktrees 2>/dev/null || true
 # Format: timestamp session_id repo_name worktree_path details
 if [[ -n "$EPIC" ]]; then
   echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} ${WORKTREE_DIR} epic=#${EPIC} \"${ISSUE_TITLE}\"" >> /tmp/claude-sessions.txt
+elif [[ "$PR_MODE" == "true" ]]; then
+  echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} ${WORKTREE_DIR} prs=${PR_LIST} (${PR_COUNT} PRs)" >> /tmp/claude-sessions.txt
 else
   echo "$(date -Iseconds) ${SESSION_ID} ${REPO_NAME} ${WORKTREE_DIR} scope=all" >> /tmp/claude-sessions.txt
 fi
@@ -1003,6 +1129,7 @@ echo -e "${BLUE}Repository:${NC}   ${REPO_NAME}"
 echo -e "${BLUE}Branch:${NC}       ${DEFAULT_BRANCH}"
 echo -e "${BLUE}Worktree:${NC}     ${WORKTREE_DIR}"
 echo -e "${BLUE}GitHub Token:${NC} ${GREEN}✓ Set${NC}"
+echo -e "${BLUE}Model:${NC}        ${CLAUDE_MODEL}"
 echo -e "${BLUE}Max Crashes:${NC}  ${MAX_CRASHES}"
 
 # Show multi-account status if available
@@ -1038,6 +1165,9 @@ fi
 
 if [[ "$NEW_MODE" == "true" ]]; then
   echo -e "${BLUE}Mode:${NC}         ${CYAN}Interactive (waiting for instructions)${NC}"
+elif [[ "$PR_MODE" == "true" ]]; then
+  echo -e "${BLUE}Mode:${NC}         ${CYAN}PR Resolution${NC}"
+  echo -e "${BLUE}PRs:${NC}          ${PR_LIST} (${PR_COUNT} total)"
 elif [[ -n "$EPIC" ]]; then
   echo -e "${BLUE}Focus Epic:${NC}   #${EPIC} - ${ISSUE_TITLE}"
   echo -e "${BLUE}Epic URL:${NC}     ${CYAN}${ISSUE_URL}${NC}"
@@ -1124,6 +1254,86 @@ I am bootstrapped and ready. Please provide your instructions - for example:
 - 'Review and fix all TypeScript errors in the codebase'
 
 What would you like me to work on?"
+elif [[ "$PR_MODE" == "true" ]]; then
+  # PR Resolution mode: focus on resolving PRs through full lifecycle
+  INITIAL_PROMPT="You are working in an isolated git worktree at: ${WORKTREE_DIR}
+
+This worktree was created from origin/${DEFAULT_BRANCH} for PR resolution. Your session ID is ${SESSION_ID}.
+
+MISSION: Resolve the following PRs through their full lifecycle:
+PRs: ${PR_LIST}
+
+FULL LIFECYCLE FOR EACH PR:
+1. **Check CI Status** - Are all checks passing?
+   - If ANY check is failing: investigate, fix, push, wait for green
+   - Continue fixing until ALL checks pass
+
+2. **Verify Review Artifact** - Does a comprehensive review comment exist?
+   - Look for structured review comments (<!-- REVIEW:START --> markers)
+   - If missing: perform comprehensive code review and post artifact
+
+3. **Check Merge Eligibility** - Can this PR be merged?
+   - Check for 'do-not-merge' label → Skip merge, move to next PR
+   - Check for comments blocking merge → Skip merge, move to next PR
+   - If merge is permitted: squash merge and delete branch
+
+4. **Mark Linked Issue Done** - Update project board status
+
+PARALLEL EXECUTION:
+- You are an orchestrator - spawn worker agents for parallel PR resolution
+- Use Task tool with run_in_background: true for each PR
+- Monitor workers with TaskOutput (block: false)
+- Maximum 5 concurrent workers
+
+WORKER SETUP:
+Each worker needs its own isolated environment. Before spawning:
+1. Create a worktree for the PR: git worktree add ../\$(basename \$PWD)-pr-[NUMBER] [PR_BRANCH]
+2. Worker operates in that worktree directory
+
+WORKER PROMPT TEMPLATE:
+Each spawned worker should receive a prompt like:
+
+\"\"\"
+You are a PR resolution worker. Your task is to resolve PR #[NUMBER].
+
+SETUP:
+cd [WORKTREE_PATH]  # Your isolated worktree on the PR branch
+
+LIFECYCLE:
+1. Check CI status: gh pr checks [NUMBER]
+2. If failing: read logs, fix code, commit, push, wait for green
+3. If passing: verify review artifact exists in linked issue
+4. If review missing: perform code review and post artifact
+5. Check merge eligibility: no 'do-not-merge' label, no blocking comments
+6. If eligible: gh pr merge [NUMBER] --squash --delete-branch
+7. Report: PR merged OR blocked (with reason)
+
+CONSTRAINTS:
+- Only fix code directly related to CI failures
+- Always push to the existing PR branch (do not create new branches)
+- Use 'gh pr merge' with --squash --delete-branch
+
+EXIT when: PR is merged OR you determine it cannot be merged autonomously.
+\"\"\"
+
+PR RESOLUTION ORDER:
+Process PRs in the order listed. For each:
+1. Create isolated worktree for the PR
+2. Spawn a worker agent with the worktree path
+3. Worker fixes CI if failing
+4. Worker posts review artifact if missing
+5. Worker merges if permitted
+6. Worker reports completion or blockage
+7. Clean up worktree after worker completes
+
+CONSTRAINTS:
+- Do NOT modify code unrelated to failing CI
+- Do NOT merge PRs with 'do-not-merge' label
+- Do NOT merge if comments indicate human review required
+- Always squash merge, always delete branch after merge
+
+BEGIN:
+Start by checking the status of each PR and spawning workers for parallel resolution."
 else
   # Standard autonomous mode
   if [[ -n "$EPIC" ]]; then
@@ -1166,9 +1376,9 @@ while true; do
   EXIT_CODE=0
   if [[ "$FIRST_RUN" == "true" ]]; then
     FIRST_RUN=false
-    claude --dangerously-skip-permissions --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || EXIT_CODE=$?
+    claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --session-id "${SESSION_ID}" "${INITIAL_PROMPT}" || EXIT_CODE=$?
   else
-    claude --dangerously-skip-permissions --resume "${SESSION_ID}" "$MSG" || EXIT_CODE=$?
+    claude --dangerously-skip-permissions --model "${CLAUDE_MODEL}" --resume "${SESSION_ID}" "$MSG" || EXIT_CODE=$?
   fi
 
   # Exit code 0 means successful completion (user quit or work finished)

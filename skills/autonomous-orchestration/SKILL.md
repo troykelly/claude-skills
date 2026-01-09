@@ -1,12 +1,13 @@
 ---
 name: autonomous-orchestration
-description: Use when user requests autonomous operation across multiple issues. Orchestrates parallel workers, monitors progress, handles SLEEP/WAKE cycles, and works until scope is complete without user intervention.
+description: Use when user requests autonomous operation across multiple issues. Orchestrates parallel workers using Task tool, monitors with TaskOutput, handles SLEEP/WAKE cycles, and works until scope is complete without user intervention.
 allowed-tools:
   - Bash
   - Read
   - Grep
   - Glob
   - Task
+  - TaskOutput
   - mcp__github__*
   - mcp__memory__*
 model: opus
@@ -16,7 +17,7 @@ model: opus
 
 ## Overview
 
-Orchestrates long-running autonomous work across multiple issues, spawning parallel workers, monitoring CI, and persisting state across sessions.
+Orchestrates long-running autonomous work across multiple issues using the **Task tool** to spawn parallel worker agents and **TaskOutput** to monitor their progress.
 
 **Core principle:** GitHub is the source of truth. Workers are disposable. State survives restarts.
 
@@ -24,23 +25,45 @@ Orchestrates long-running autonomous work across multiple issues, spawning paral
 
 ## Prerequisites
 
-- `worker-dispatch` skill for spawning workers
+- `worker-dispatch` skill for spawning workers with Task tool
 - `worker-protocol` skill for worker behavior
 - `ci-monitoring` skill for CI/WAKE handling
-- Git worktrees support (workers use isolated worktrees)
 - GitHub CLI (`gh`) authenticated
 - GitHub Project Board configured
 
+## Parallel Execution Model
+
+Workers are spawned as **background agents** using the Task tool:
+
+```
+Orchestrator
+    │
+    ├── Task(run_in_background: true) → Worker Agent #1 (task_id: aa93f22)
+    ├── Task(run_in_background: true) → Worker Agent #2 (task_id: b51e54b)
+    └── Task(run_in_background: true) → Worker Agent #3 (task_id: c72f3d1)
+```
+
+Monitor progress with TaskOutput:
+
+```
+TaskOutput(task_id: "aa93f22", block: false) → "Task is still running..."
+TaskOutput(task_id: "b51e54b", block: false) → Completed with result
+TaskOutput(task_id: "c72f3d1", block: false) → "Task is still running..."
+```
+
+**CRITICAL:** Spawn all workers in the SAME message for true concurrent execution.
+
 ## State Management
 
-**CRITICAL:** All state is stored in GitHub. NO local state files.
+**CRITICAL:** All persistent state is stored in GitHub. Task IDs are ephemeral session state.
 
 | State Store | Purpose | Used For |
 |-------------|---------|----------|
 | Project Board Status | THE source of truth | Ready, In Progress, In Review, Blocked, Done |
 | Issue Comments | Activity log | Worker assignment, progress, deviations |
 | Labels | Lineage only | `spawned-from:#N`, `depth:N`, `epic-*` |
-| MCP Memory | Fast cache + active marker | Read optimization, **active orchestration detection** |
+| MCP Memory | Active marker + task tracking | **Active orchestration detection**, active task_ids |
+| Orchestrator memory | Ephemeral session state | Map of issue# → task_id for monitoring |
 
 **See:** `reference/state-management.md` for detailed state queries and updates.
 
@@ -321,8 +344,9 @@ PRs are excluded from bootstrap resolution if:
       ┌───────────────────┼───────────────────┐
       ▼                   ▼                   ▼
 ┌───────────┐      ┌───────────┐      ┌───────────┐
-│ CHECK     │      │ CHECK     │      │ SPAWN     │
+│ MONITOR   │      │ CHECK     │      │ SPAWN     │
 │ WORKERS   │      │ CI/PRs    │      │ WORKERS   │
+│ (TaskOut) │      │           │      │ (Task)    │
 └─────┬─────┘      └─────┬─────┘      └─────┬─────┘
       │                  │                  │
       └──────────────────┼──────────────────┘
@@ -341,12 +365,50 @@ PRs are excluded from bootstrap resolution if:
 
 ### Loop Steps
 
-1. **Check Deviation Resolution** - Resume issues whose children are all closed
-2. **Check CI/PRs** - Monitor for merge readiness, verify review artifacts
-3. **MERGE GREEN PRs** - Any PR with passing CI is merged IMMEDIATELY
-4. **Spawn Workers** - Up to 5 parallel workers from Ready queue
-5. **Evaluate State** - Determine next action (continue, sleep, complete)
-6. **Brief Pause** - 30 second interval between iterations
+1. **Monitor Active Workers** - Use `TaskOutput(block: false)` for each active task_id
+2. **Handle Completed Workers** - Check GitHub for PR/completion status
+3. **Check CI/PRs** - Monitor for merge readiness, verify review artifacts
+4. **MERGE GREEN PRs** - Any PR with passing CI is merged IMMEDIATELY
+5. **Spawn Workers** - Up to 5 parallel workers using `Task(run_in_background: true)`
+6. **Evaluate State** - Determine next action (continue, sleep, complete)
+7. **Brief Pause** - 30 second interval between iterations
+
+### Worker Monitoring with TaskOutput
+
+Each loop iteration checks all active workers:
+
+```markdown
+## Monitor Active Workers
+
+For each task_id in active_workers:
+  TaskOutput(task_id: "[ID]", block: false, timeout: 1000)
+
+Interpret results:
+- "Task is still running..." → Continue monitoring
+- Completed → Check GitHub for PR, update project board, remove from active list
+- Error → Handle failure, potentially spawn replacement
+```
+
+### Spawning Parallel Workers
+
+Spawn multiple workers in ONE message for concurrent execution:
+
+```markdown
+## Dispatch Workers
+
+1. Count available slots: 5 - len(active_workers)
+2. Get Ready issues from project board
+3. For each issue to dispatch:
+
+Task(
+  description: "Issue #123 worker",
+  prompt: [WORKER_PROMPT],
+  subagent_type: "general-purpose",
+  run_in_background: true
+)
+
+4. Store returned task_id → issue mapping
+```
 
 ### CRITICAL: Merge Green PRs Immediately
 
@@ -438,11 +500,10 @@ State is posted to GitHub tracking issue (survives crashes).
 Before starting orchestration:
 
 - [ ] Scope identified (explicit or auto-detected)
-- [ ] Git worktrees available (`git worktree list`)
 - [ ] GitHub CLI authenticated (`gh auth status`)
-- [ ] No uncommitted changes in main worktree
 - [ ] Tracking issue exists with `orchestration-tracking` label
 - [ ] Project board configured with Status field
+- [ ] Active marker written to MCP Memory
 
 Bootstrap phase:
 
@@ -455,12 +516,16 @@ Bootstrap phase:
 
 During orchestration:
 
-- [ ] Workers spawned with worktree isolation
-- [ ] Worker status tracked via Project Board (NOT labels)
-- [ ] CI status monitored
+- [ ] Workers spawned using `Task(run_in_background: true)`
+- [ ] Task IDs stored for each worker (issue# → task_id mapping)
+- [ ] Worker status monitored with `TaskOutput(block: false)`
+- [ ] Completed workers detected and handled
+- [ ] Project board status updated (In Progress, In Review, Done)
+- [ ] CI status monitored for open PRs
+- [ ] Green PRs merged IMMEDIATELY
 - [ ] Review artifacts verified before PR merge
 - [ ] Failed workers trigger research cycles
-- [ ] Handovers happen at turn limit
+- [ ] Handovers spawn replacement workers
 - [ ] SLEEP entered when only waiting on CI
 - [ ] Deviation resolution checked each loop
 - [ ] Status posted to tracking issue

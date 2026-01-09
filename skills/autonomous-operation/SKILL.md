@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - Task
+  - TaskOutput
   - mcp__github__*
   - mcp__git__*
   - mcp__memory__*

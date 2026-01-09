@@ -88,12 +88,12 @@ PR #$pr has passing CI but no review artifact.
         ┌─────────────────────────┼─────────────────────────┐
         ▼                         ▼                         ▼
 ┌───────────────┐         ┌───────────────┐         ┌───────────────┐
-│ CHECK WORKERS │         │ CHECK CI/PRs  │         │ SPAWN/MANAGE  │
-│               │         │               │         │               │
-│ - Still alive?│         │ - CI status?  │         │ - Capacity?   │
-│ - Completed?  │         │ - Ready merge?│         │ - Next issue? │
-│ - Handover?   │         │ - Failed?     │         │ - Spawn worker│
-│ - Failed?     │         │               │         │               │
+│ MONITOR       │         │ CHECK CI/PRs  │         │ SPAWN WORKERS │
+│ WORKERS       │         │               │         │               │
+│               │         │ - CI status?  │         │ - Capacity?   │
+│ TaskOutput()  │         │ - Ready merge?│         │ - Next issues?│
+│ for each      │         │ - Failed?     │         │ - Task() with │
+│ task_id       │         │               │         │   background  │
 └───────┬───────┘         └───────┬───────┘         └───────┬───────┘
         │                         │                         │
         └─────────────────────────┼─────────────────────────┘
@@ -108,6 +108,23 @@ PR #$pr has passing CI but no review artifact.
                         │ Work to do? →     │
                         │   Continue        │
                         └───────────────────┘
+```
+
+## Active Worker Tracking
+
+Maintain a mapping of issue# → task_id for all active workers:
+
+```markdown
+## Active Workers State
+
+Orchestrator maintains:
+active_workers = {
+  123: "aa93f22",  # Issue #123 → task_id aa93f22
+  124: "b51e54b",  # Issue #124 → task_id b51e54b
+  125: "c72f3d1"   # Issue #125 → task_id c72f3d1
+}
+
+This state is ephemeral (session only). Persistent state is in GitHub.
 ```
 
 ## Helper Functions
@@ -199,151 +216,137 @@ mark_issue_done() {
 
 ## Main Loop
 
-```bash
-# ═══════════════════════════════════════════════════════════════════
-# ORCHESTRATION START: Write active marker to MCP Memory
-# ═══════════════════════════════════════════════════════════════════
-write_active_marker() {
-  mcp__memory__create_entities([{
-    "name": "ActiveOrchestration",
-    "entityType": "Orchestration",
-    "observations": [
-      "Status: ACTIVE",
-      "Scope: $SCOPE",
-      "Tracking Issue: #$TRACKING_ISSUE",
-      "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)",
-      "Repository: $OWNER/$REPO",
-      "Phase: BOOTSTRAP",
-      "Last Loop: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    ]
-  }])
-}
+The main loop uses Task tool to spawn workers and TaskOutput to monitor them.
 
-update_active_marker() {
-  local phase=$1
-  mcp__memory__add_observations({
-    "observations": [{
-      "entityName": "ActiveOrchestration",
-      "contents": [
-        "Phase: $phase",
-        "Last Loop: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      ]
-    }]
-  })
-}
+### Orchestration Start
 
-clear_active_marker() {
-  mcp__memory__delete_entities({
-    "entityNames": ["ActiveOrchestration"]
-  })
-}
+```markdown
+## Starting Orchestration
 
-# Write marker at orchestration start
-write_active_marker
+1. Write active marker to MCP Memory:
+   mcp__memory__create_entities([{
+     "name": "ActiveOrchestration",
+     "entityType": "Orchestration",
+     "observations": [
+       "Status: ACTIVE",
+       "Scope: [MILESTONE/EPIC/unbounded]",
+       "Tracking Issue: #[NUMBER]",
+       "Started: [ISO_TIMESTAMP]",
+       "Repository: [owner/repo]",
+       "Phase: BOOTSTRAP"
+     ]
+   }])
 
-# ═══════════════════════════════════════════════════════════════════
-# BOOTSTRAP: Resolve existing PRs before spawning new work
-# ═══════════════════════════════════════════════════════════════════
-resolve_existing_prs
-update_active_marker "MAIN_LOOP"
+2. Run bootstrap phase (resolve existing PRs)
 
-# ═══════════════════════════════════════════════════════════════════
-# MAIN LOOP: Continuous orchestration
-# ═══════════════════════════════════════════════════════════════════
-while true; do
-  # Update marker on each iteration (survives compaction)
-  update_active_marker "MAIN_LOOP"
+3. Enter main loop
+```
 
-  # Post status update to tracking issue
-  post_orchestration_status
+### Main Loop Implementation
 
-  # ─────────────────────────────────────────────────────────────
-  # 1. CHECK FOR DEVIATION RESOLUTION
-  # ─────────────────────────────────────────────────────────────
-  for issue in $(gh issue list --label "spawned-from:" --state closed --json number --jq '.[].number' 2>/dev/null | sort -u); do
-    parent=$(gh issue view "$issue" --json labels --jq '.labels[] | select(.name | startswith("spawned-from:")) | .name' | sed 's/spawned-from:#//')
-    if [ -n "$parent" ]; then
-      check_deviation_resolution "$parent"
-    fi
-  done
+```markdown
+## MAIN LOOP
 
-  # ─────────────────────────────────────────────────────────────
-  # 2. CHECK CI/PRs
-  # ─────────────────────────────────────────────────────────────
-  for pr in $(gh pr list --json number --jq '.[].number'); do
-    ci_status=$(gh pr checks "$pr" --json state --jq '.[].state' | sort -u)
+Each iteration:
 
-    if echo "$ci_status" | grep -q "SUCCESS"; then
-      # Verify review artifact exists before merge
-      ISSUE=$(gh pr view "$pr" --json body --jq '.body' | grep -oE 'Closes #[0-9]+' | grep -oE '[0-9]+')
-      REVIEW_EXISTS=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE/comments" \
-        --jq '[.[] | select(.body | contains("<!-- REVIEW:START -->"))] | length' 2>/dev/null || echo "0")
+### 1. MONITOR ACTIVE WORKERS
 
-      if [ "$REVIEW_EXISTS" = "0" ]; then
-        gh pr comment "$pr" --body "Merge Blocked: No review artifact found in issue #$ISSUE.
-Complete comprehensive-review and post artifact to issue before merge."
-        continue
-      fi
+For each task_id in active_workers:
+  TaskOutput(task_id: "[ID]", block: false, timeout: 1000)
 
-      if [ "$AUTO_MERGE" = "true" ]; then
-        gh pr merge "$pr" --squash --auto
-        mark_issue_done "$ISSUE"
-      fi
-    elif echo "$ci_status" | grep -q "FAILURE"; then
-      handle_ci_failure "$pr"
-    fi
-  done
+Handle results:
+- "Task is still running..." → Continue monitoring
+- Completed successfully → Check GitHub for PR, update project board
+- Failed/Error → Check if handover needed, possibly spawn replacement
 
-  # ─────────────────────────────────────────────────────────────
-  # 3. SPAWN NEW WORKERS
-  # ─────────────────────────────────────────────────────────────
-  active_count=$(get_in_progress_issues | wc -l | tr -d ' ')
+### 2. CHECK CI/PRs
 
-  while [ "$active_count" -lt 5 ]; do
-    next_issue=$(get_pending_issues | head -1)
+For each open PR:
+  - Check CI status with: gh pr view [PR] --json statusCheckRollup
+  - If all checks SUCCESS and review artifact exists:
+    → gh pr merge [PR] --squash --delete-branch
+    → mark_issue_done [ISSUE]
+  - If FAILURE:
+    → Spawn CI monitoring agent to investigate/fix
 
-    if [ -z "$next_issue" ]; then
-      break
-    fi
+### 3. SPAWN NEW WORKERS
 
-    worker_id="worker-$(date +%s)-$next_issue"
-    mark_issue_in_progress "$next_issue" "$worker_id"
-    spawn_worker "$next_issue" "$worker_id"
-    active_count=$((active_count + 1))
-  done
+Calculate available slots: 5 - len(active_workers)
 
-  # ─────────────────────────────────────────────────────────────
-  # 4. EVALUATE STATE
-  # ─────────────────────────────────────────────────────────────
-  pending=$(get_pending_issues | wc -l | tr -d ' ')
-  in_progress=$(get_in_progress_issues | wc -l | tr -d ' ')
-  in_review=$(get_in_review_issues | wc -l | tr -d ' ')
-  blocked=$(get_blocked_issues | wc -l | tr -d ' ')
-  open_prs=$(gh pr list --json number --jq 'length')
+If slots available AND pending issues exist:
+  Get next N pending issues from project board
 
-  if [ "$pending" -eq 0 ] && [ "$in_progress" -eq 0 ] && [ "$in_review" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
-    complete_orchestration
-    clear_active_marker  # Remove marker - orchestration complete
-    exit 0
-  fi
+  **IMPORTANT: Spawn ALL in ONE message for true parallelism:**
 
-  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$open_prs" -gt 0 ]; then
-    update_active_marker "SLEEPING:waiting_for_ci"  # Keep marker - will resume on CI complete
-    enter_sleep "waiting_for_ci"
-    exit 0
-  fi
+  Task(description: "Issue #123 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+  Task(description: "Issue #124 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
+  Task(description: "Issue #125 worker", prompt: [...], subagent_type: "general-purpose", run_in_background: true)
 
-  if [ "$in_progress" -eq 0 ] && [ "$pending" -eq 0 ] && [ "$blocked" -gt 0 ]; then
-    update_active_marker "SLEEPING:all_remaining_blocked"  # Keep marker - will resume when unblocked
-    enter_sleep "all_remaining_blocked"
-    exit 0
-  fi
+  Store returned task_ids in active_workers mapping
 
-  # ─────────────────────────────────────────────────────────────
-  # 5. BRIEF PAUSE
-  # ─────────────────────────────────────────────────────────────
-  sleep 30
-done
+### 4. EVALUATE STATE
+
+Query project board for counts:
+- pending = count of "Ready" issues
+- in_progress = count of "In Progress" issues
+- in_review = count of "In Review" issues
+- blocked = count of "Blocked" issues
+- open_prs = count of open PRs
+
+Decision logic:
+- IF pending=0 AND in_progress=0 AND in_review=0 AND open_prs=0:
+  → complete_orchestration(), clear_active_marker(), EXIT
+
+- IF in_progress=0 AND pending=0 AND open_prs>0:
+  → update_active_marker("SLEEPING:waiting_for_ci"), enter_sleep()
+
+- IF in_progress=0 AND pending=0 AND blocked>0:
+  → update_active_marker("SLEEPING:all_remaining_blocked"), enter_sleep()
+
+- ELSE:
+  → Continue to next iteration
+
+### 5. BRIEF PAUSE
+
+Wait 30 seconds before next iteration (allows CI to progress, workers to complete)
+```
+
+### Example Loop Iteration
+
+```markdown
+## Loop Iteration Example
+
+**Active workers:** {284: "a791653", 285: "b51e54b", 286: "aa93f22"}
+
+**Step 1: Monitor Workers**
+TaskOutput(task_id: "a791653", block: false)  → "Task is still running..."
+TaskOutput(task_id: "b51e54b", block: false)  → Completed with result
+TaskOutput(task_id: "aa93f22", block: false)  → "Task is still running..."
+
+Worker b51e54b completed → Check GitHub:
+  gh pr list --head "feature/285-*"  → Found PR #290
+  Update project board: Issue #285 → "In Review"
+  Remove from active_workers: {284: "a791653", 286: "aa93f22"}
+
+**Step 2: Check CI/PRs**
+PR #290: gh pr view 290 --json statusCheckRollup
+  All checks SUCCESS → gh pr merge 290 --squash --delete-branch
+  mark_issue_done(285)
+
+**Step 3: Spawn Workers**
+Available slots: 5 - 2 = 3
+Pending issues: #287, #288
+
+Spawn 2 workers in ONE message:
+Task(description: "Issue #287 worker", ..., run_in_background: true)
+Task(description: "Issue #288 worker", ..., run_in_background: true)
+
+Update active_workers: {284: "a791653", 286: "aa93f22", 287: "d82e3f4", 288: "e93f4a5"}
+
+**Step 4: Evaluate**
+pending=0, in_progress=4, open_prs=1 → Continue
+
+**Step 5: Pause 30s**
 ```
 
 ## Status Reporting

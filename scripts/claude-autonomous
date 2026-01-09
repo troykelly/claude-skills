@@ -47,7 +47,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.8.0"
+VERSION="1.8.1"
 
 # Model to use for autonomous operations (can be overridden via environment)
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5-20251101}"

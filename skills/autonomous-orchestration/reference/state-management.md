@@ -33,61 +33,66 @@ State is tracked via:
 
 ## State Queries via Project Board
 
+**CRITICAL: Use cached data from `github-api-cache`. ALL queries use 0 API calls.**
+
 ```bash
-# Get pending issues in scope (Status = Ready)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
+# PREREQUISITE: GH_CACHE_ITEMS must be set by session-start via github-api-cache
 
-# Get in-progress issues (Status = In Progress)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
+# Get pending issues in scope (Status = Ready) - 0 API calls
+echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
 
-# Get blocked issues (Status = Blocked)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
+# Get in-progress issues (Status = In Progress) - 0 API calls
+echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
 
-# Get issues in review (Status = In Review)
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
+# Get blocked issues (Status = Blocked) - 0 API calls
+echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
 
-# Count by status
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq '[.items[] | select(.status.name == "In Progress")] | length'
+# Get issues in review (Status = In Review) - 0 API calls
+echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
+
+# Count by status - 0 API calls
+echo "$GH_CACHE_ITEMS" | jq '[.items[] | select(.status.name == "In Progress")] | length'
 ```
 
 ## State Updates via Project Board
+
+**Uses cached IDs. 1 API call for update, 1 API call to refresh cache.**
 
 ```bash
 update_project_status() {
   local issue=$1
   local new_status=$2  # Ready, In Progress, In Review, Blocked, Done
 
-  # Get item ID
-  ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".items[] | select(.content.number == $issue) | .id")
+  # Get item ID FROM CACHE (0 API calls)
+  ITEM_ID=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == $issue) | .id")
 
   if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
     echo "ERROR: Issue #$issue not in project board. Add it first."
     return 1
   fi
 
-  # Get project and field IDs
-  PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
-    jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+  # Use cached IDs (0 API calls) - GH_PROJECT_ID, GH_STATUS_FIELD_ID set by session-start
+  # Get option ID from cached environment variable or lookup from cache
+  local option_id
+  case "$new_status" in
+    "Backlog")     option_id="$GH_STATUS_BACKLOG_ID" ;;
+    "Ready")       option_id="$GH_STATUS_READY_ID" ;;
+    "In Progress") option_id="$GH_STATUS_IN_PROGRESS_ID" ;;
+    "In Review")   option_id="$GH_STATUS_IN_REVIEW_ID" ;;
+    "Done")        option_id="$GH_STATUS_DONE_ID" ;;
+    "Blocked")     option_id="$GH_STATUS_BLOCKED_ID" ;;
+    *)
+      option_id=$(echo "$GH_CACHE_FIELDS" | jq -r ".fields[] | select(.name == \"Status\") | .options[] | select(.name == \"$new_status\") | .id")
+      ;;
+  esac
 
-  STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+  # Update status (1 API call)
+  gh project item-edit --project-id "$GH_PROJECT_ID" --id "$ITEM_ID" \
+    --field-id "$GH_STATUS_FIELD_ID" --single-select-option-id "$option_id"
 
-  OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".fields[] | select(.name == \"Status\") | .options[] | select(.name == \"$new_status\") | .id")
-
-  # Update status
-  gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-    --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
-
-  # Verify update
-  ACTUAL=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r ".items[] | select(.content.number == $issue) | .status.name")
+  # Refresh cache and verify (1 API call)
+  export GH_CACHE_ITEMS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json)
+  ACTUAL=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == $issue) | .status.name")
 
   if [ "$ACTUAL" != "$new_status" ]; then
     echo "ERROR: Status update failed. Expected $new_status, got $ACTUAL"

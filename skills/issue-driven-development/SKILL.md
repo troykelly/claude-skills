@@ -40,23 +40,23 @@ Create TodoWrite items for each step you'll execute. This is not optional.
 - If issue is vague → Ask questions, UPDATE the issue, then proceed
 - **VERIFY** issue is in GitHub Project with correct fields (not assumed - verified)
 
-**Verification (MANDATORY):**
+**Verification (MANDATORY) - uses cached data:**
 
 ```bash
-# Verify issue is in project board
-ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".items[] | select(.content.number == [ISSUE_NUMBER]) | .id")
+# Verify issue is in project board (0 API calls - uses cache)
+ITEM_ID=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == [ISSUE_NUMBER]) | .id")
 
 if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
   echo "BLOCKED: Issue not in project board. Add it before proceeding."
-  # Add to project
+  # Add to project (1 API call) and refresh cache (1 API call)
   gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
     --url "$(gh issue view [ISSUE_NUMBER] --json url -q .url)"
+  export GH_CACHE_ITEMS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json)
+  ITEM_ID=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == [ISSUE_NUMBER]) | .id")
 fi
 
-# Verify Status field is set
-STATUS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
+# Verify Status field is set (0 API calls - uses cache)
+STATUS=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
 
 if [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
   echo "BLOCKED: Issue has no Status in project. Set Status before proceeding."
@@ -147,28 +147,21 @@ fi
 
 **Naming:** `feature/issue-123-short-description` or `fix/issue-456-bug-name`
 
-**Project Status Update (MANDATORY):**
+**Project Status Update (MANDATORY) - uses cached IDs:**
 
 When starting work, update project board Status to "In Progress":
 
 ```bash
-# Get project and field IDs
-PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
-  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+# Use cached IDs (0 API calls for lookups)
+# GH_PROJECT_ID, GH_STATUS_FIELD_ID, GH_STATUS_IN_PROGRESS_ID set by session-start
 
-STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+# Update status to In Progress (1 API call)
+gh project item-edit --project-id "$GH_PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$GH_STATUS_FIELD_ID" --single-select-option-id "$GH_STATUS_IN_PROGRESS_ID"
 
-IN_PROGRESS_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
-
-# Update status to In Progress
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_PROGRESS_ID"
-
-# Verify update succeeded
-NEW_STATUS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
+# Refresh cache and verify (1 API call)
+export GH_CACHE_ITEMS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json)
+NEW_STATUS=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.id == \"$ITEM_ID\") | .status.name")
 
 if [ "$NEW_STATUS" != "In Progress" ]; then
   echo "ERROR: Failed to update project status. Cannot proceed."
@@ -404,18 +397,21 @@ At minimum, update the issue:
 
 ### Project Board Query (NOT Labels)
 
-**CRITICAL:** Use project board for state queries, NOT labels.
+**CRITICAL:** Use cached project data for state queries, NOT labels and NOT repeated API calls.
 
 ```bash
 # WRONG - do not use labels for state
 gh issue list --label "status:in-progress"
 
-# RIGHT - query project board
+# WRONG - do not make repeated API calls
 gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
   --format json | jq -r '.items[] | select(.status.name == "In Progress")'
+
+# RIGHT - use cached data (0 API calls)
+echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Progress")'
 ```
 
-**Skill:** `issue-lifecycle`, `project-status-sync`, `project-board-enforcement`
+**Skill:** `github-api-cache`, `issue-lifecycle`, `project-status-sync`, `project-board-enforcement`
 
 ## Error Handling
 

@@ -1,8 +1,8 @@
 # Issue-Driven Development
 
-[![Version](https://img.shields.io/badge/version-1.7.2-blue.svg)](https://github.com/troykelly/claude-skills)
+[![Version](https://img.shields.io/badge/version-1.7.3-blue.svg)](https://github.com/troykelly/claude-skills)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Skills](https://img.shields.io/badge/skills-51-purple.svg)](#skills-reference)
+[![Skills](https://img.shields.io/badge/skills-52-purple.svg)](#skills-reference)
 [![Agents](https://img.shields.io/badge/agents-9-orange.svg)](#agents)
 
 A Claude Code plugin for autonomous, GitHub-native software development. Work through issues, create PRs, and ship code - all without manual intervention.

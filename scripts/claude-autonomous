@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.7.2"
+VERSION="1.7.3"
 
 # Colors
 RED='\033[0;31m'

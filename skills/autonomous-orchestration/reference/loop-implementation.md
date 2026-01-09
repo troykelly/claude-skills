@@ -112,25 +112,29 @@ PR #$pr has passing CI but no review artifact.
 
 ## Helper Functions
 
+**All query functions use cached data. 0 API calls.**
+
 ```bash
+# PREREQUISITE: GH_CACHE_ITEMS must be set by session-start via github-api-cache
+
 get_pending_issues() {
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
+  # Use cached data (0 API calls)
+  echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "Ready") | .content.number'
 }
 
 get_in_progress_issues() {
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
+  # Use cached data (0 API calls)
+  echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Progress") | .content.number'
 }
 
 get_blocked_issues() {
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
+  # Use cached data (0 API calls)
+  echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "Blocked") | .content.number'
 }
 
 get_in_review_issues() {
-  gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-    --format json | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
+  # Use cached data (0 API calls)
+  echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Review") | .content.number'
 }
 
 mark_issue_in_progress() {

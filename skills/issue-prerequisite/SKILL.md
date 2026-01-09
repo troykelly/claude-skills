@@ -132,8 +132,10 @@ echo "Created issue #$ISSUE_NUMBER"
 
 **This step is NOT optional. It is a gate.**
 
+**Uses cached IDs from `github-api-cache`. API calls: 1 (add) + 1 (refresh cache).**
+
 ```bash
-# Add to project - REQUIRED
+# Add to project - REQUIRED (1 API call)
 gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --url "$ISSUE_URL"
 
 if [ $? -ne 0 ]; then
@@ -142,9 +144,11 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Get the item ID - REQUIRED for field updates
-ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".items[] | select(.content.number == $ISSUE_NUMBER) | .id")
+# Refresh cache after adding (1 API call)
+export GH_CACHE_ITEMS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json)
+
+# Get the item ID from refreshed cache (0 API calls)
+ITEM_ID=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == $ISSUE_NUMBER) | .id")
 
 if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
   echo "ERROR: Issue added but item ID not found. Cannot set fields."
@@ -158,41 +162,30 @@ echo "Issue #$ISSUE_NUMBER added to project with item ID: $ITEM_ID"
 
 **All fields must be set before proceeding.**
 
+**Uses cached IDs - 0 API calls for lookups, 3 API calls for field updates.**
+
 ```bash
-# Get project ID
-PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
-  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
+# Use cached IDs (0 API calls) - set by session-start via github-api-cache
+# GH_PROJECT_ID, GH_STATUS_FIELD_ID, GH_STATUS_READY_ID already available
 
-# Get field IDs
-STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+# Get Type and Priority field IDs from cache (0 API calls)
+TYPE_FIELD_ID=$(echo "$GH_CACHE_FIELDS" | jq -r '.fields[] | select(.name == "Type") | .id')
+PRIORITY_FIELD_ID=$(echo "$GH_CACHE_FIELDS" | jq -r '.fields[] | select(.name == "Priority") | .id')
 
-TYPE_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Type") | .id')
+# Get option IDs from cache (0 API calls)
+TYPE_OPTION_ID=$(echo "$GH_CACHE_FIELDS" | jq -r ".fields[] | select(.name == \"Type\") | .options[] | select(.name == \"[TYPE]\") | .id")
+PRIORITY_OPTION_ID=$(echo "$GH_CACHE_FIELDS" | jq -r ".fields[] | select(.name == \"Priority\") | .options[] | select(.name == \"[PRIORITY]\") | .id")
 
-PRIORITY_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Priority") | .id')
+# Set Status = Ready (1 API call)
+gh project item-edit --project-id "$GH_PROJECT_ID" --id "$ITEM_ID" \
+  --field-id "$GH_STATUS_FIELD_ID" --single-select-option-id "$GH_STATUS_READY_ID"
 
-# Get option IDs for the values we want to set
-READY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id')
-
-TYPE_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".fields[] | select(.name == \"Type\") | .options[] | select(.name == \"[TYPE]\") | .id")
-
-PRIORITY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".fields[] | select(.name == \"Priority\") | .options[] | select(.name == \"[PRIORITY]\") | .id")
-
-# Set Status = Ready
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
-
-# Set Type
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+# Set Type (1 API call)
+gh project item-edit --project-id "$GH_PROJECT_ID" --id "$ITEM_ID" \
   --field-id "$TYPE_FIELD_ID" --single-select-option-id "$TYPE_OPTION_ID"
 
-# Set Priority
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+# Set Priority (1 API call)
+gh project item-edit --project-id "$GH_PROJECT_ID" --id "$ITEM_ID" \
   --field-id "$PRIORITY_FIELD_ID" --single-select-option-id "$PRIORITY_OPTION_ID"
 ```
 
@@ -200,10 +193,12 @@ gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
 
 **Do not proceed until verification passes.**
 
+**Refresh cache and verify (1 API call).**
+
 ```bash
-# Verify all fields are set
-VERIFY=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq ".items[] | select(.content.number == $ISSUE_NUMBER)")
+# Refresh cache and verify (1 API call)
+export GH_CACHE_ITEMS=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --format json)
+VERIFY=$(echo "$GH_CACHE_ITEMS" | jq ".items[] | select(.content.number == $ISSUE_NUMBER)")
 
 STATUS=$(echo "$VERIFY" | jq -r '.status.name')
 TYPE=$(echo "$VERIFY" | jq -r '.type.name // "unset"')

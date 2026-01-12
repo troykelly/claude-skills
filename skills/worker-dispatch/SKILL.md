@@ -21,6 +21,24 @@ Spawns and manages worker Claude agents using the **Task tool with `run_in_backg
 
 **Key optimization:** Pre-extract issue context BEFORE spawning. Workers receive focused context, not raw issues.
 
+## Worktree Isolation (MANDATORY)
+
+**CRITICAL:** Every worker MUST have its own git worktree. Workers NEVER operate in the main repository.
+
+```
+Main Repository (./)           ← Orchestrator only
+    │
+    └── Worktrees (isolated)
+        ├── ../project-worker-123/    ← Worker for #123
+        ├── ../project-worker-124/    ← Worker for #124
+        └── ../project-worker-125/    ← Worker for #125
+```
+
+**Orchestrator responsibility:** Create worktree BEFORE spawning worker.
+**Worker responsibility:** Verify isolation BEFORE any work (see `worker-protocol`).
+
+This prevents file clobbering between parallel workers.
+
 ## Worker Types
 
 | Type | Subagent | Purpose | When to Use |

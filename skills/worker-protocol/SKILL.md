@@ -28,18 +28,74 @@ Behavioral contract for spawned worker agents. Embedded in worker prompts by `wo
 | issue | `123` | Assigned issue |
 | attempt | `1` | Which attempt |
 
-## Startup
+## Worktree Isolation (FIRST)
 
-1. Verify branch: `git branch --show-current` (should be `feature/[ISSUE]-*`)
-2. Check worktree clean: `git status`
-3. Run baseline tests: `pnpm test` or equivalent
-4. Post startup comment to issue
+**CRITICAL:** Workers MUST operate in isolated worktrees. Never work in the main repository.
 
-**Startup comment:**
+### Verify Worktree Before ANY Work
+
+```bash
+# FIRST thing every worker does - verify isolation
+verify_worktree() {
+  # Check we're in a worktree, not main repo
+  WORKTREE_ROOT=$(git worktree list --porcelain | grep "^worktree" | head -1 | cut -d' ' -f2)
+  CURRENT_DIR=$(pwd)
+
+  if [ "$WORKTREE_ROOT" = "$CURRENT_DIR" ] && git worktree list | grep -q "$(pwd).*\["; then
+    echo "✓ In isolated worktree: $(pwd)"
+  else
+    echo "ERROR: Not in an isolated worktree!"
+    echo "Current: $(pwd)"
+    echo "Worktrees: $(git worktree list)"
+    exit 1
+  fi
+
+  # Verify on feature branch, not main
+  BRANCH=$(git branch --show-current)
+  if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+    echo "ERROR: On $BRANCH branch - must be on feature branch!"
+    exit 1
+  fi
+
+  echo "✓ On branch: $BRANCH"
+}
+```
+
+**If NOT in a worktree:** STOP. Post error to issue. Exit immediately.
+
+Workers must NEVER:
+- Work directly in the main repository
+- Create branches in main repo
+- Modify files that other workers might touch
+
+## Startup Checklist
+
+Workers MUST execute this checklist before starting work:
+
+- [ ] **Verify worktree isolation** (see above - MUST be first)
+- [ ] Read assigned issue completely
+- [ ] Check issue comments for context/history
+- [ ] Verify on correct feature branch (`git branch --show-current`)
+- [ ] Check worktree is clean (`git status`)
+- [ ] Run existing tests to verify baseline (`pnpm test` or equivalent)
+- [ ] Post startup comment to issue
+
+**Startup comment template:**
 ```markdown
-**Worker Started:** `[WORKER_ID]` | Attempt [N] | Branch `[BRANCH]`
-Understanding: [1 sentence summary]
-Approach: [brief plan]
+**Worker Started**
+
+| Property | Value |
+|----------|-------|
+| Worker ID | `[WORKER_ID]` |
+| Attempt | [N] |
+| Branch | `[BRANCH]` |
+
+**Understanding:** [1-2 sentence summary of what issue requires]
+
+**Approach:** [Brief planned approach]
+
+---
+*Orchestration: [ORCHESTRATION_ID]*
 ```
 
 ## Progress Reporting
@@ -54,17 +110,100 @@ Post to issue on: **start**, **milestone**, **blocker**, **completion**
 
 ## Exit Conditions
 
-Exit when ANY occurs. Return structured JSON:
+Exit when ANY occurs. Return structured JSON and post appropriate comment.
 
-```json
-{"status": "COMPLETED|BLOCKED|HANDOVER", "pr": null, "summary": "..."}
+### 1. COMPLETED (Success)
+
+```markdown
+**Worker Complete** ✅
+
+**PR Created:** #[PR_NUMBER]
+**Issue:** #[ISSUE]
+**Branch:** `[BRANCH]`
+
+**Summary:** [1-2 sentences describing what was implemented]
+
+**Tests:** [N] passing | Coverage: [X]%
+
+---
+*Worker: [WORKER_ID] | Turns: [N]/100*
 ```
 
-| Status | Condition | Action Before Exit |
-|--------|-----------|-------------------|
-| COMPLETED | PR created, tests pass | Post completion comment |
-| BLOCKED | Cannot proceed without external input | Document blocker, what was tried |
-| HANDOVER | Turn count 90+ | Post full handover to issue |
+Return: `{"status": "COMPLETED", "pr": [PR_NUMBER], "summary": "..."}`
+
+### 2. BLOCKED (External Dependency)
+
+Only after exhausting all options:
+
+```markdown
+**Worker Blocked** 🚫
+
+**Reason:** [Clear description of blocker]
+
+**What I tried:**
+1. [Approach 1] - [Why it didn't work]
+2. [Approach 2] - [Why it didn't work]
+
+**Required to unblock:**
+- [ ] [Specific action needed from human/external]
+
+**Cannot proceed because:** [Why this is a true blocker, not just hard]
+
+---
+*Worker: [WORKER_ID] | Attempt: [N]*
+```
+
+Return: `{"status": "BLOCKED", "pr": null, "summary": "Blocked: [reason]"}`
+
+### 3. HANDOVER (Turn Limit)
+
+At 85-90 turns, prepare handover:
+
+```markdown
+**Handover Required** 🔄
+
+**Turns Used:** [N]/100
+**Reason:** Approaching turn limit
+
+Handover context posted below. Replacement worker will continue.
+
+---
+*Worker: [WORKER_ID]*
+```
+
+Then post full handover with `<!-- HANDOVER:START -->` markers per `worker-handover` skill.
+
+Return: `{"status": "HANDOVER", "pr": null, "summary": "Handover at [N] turns"}`
+
+### 4. FAILED (Needs Research)
+
+When implementation fails after good-faith effort:
+
+```markdown
+**Worker Failed - Research Needed** 🔬
+
+**Failure:** [What failed]
+**Attempt:** [N]
+
+**What I tried:**
+1. [Approach 1] - [Result]
+2. [Approach 2] - [Result]
+
+**Error:**
+```
+[Error output]
+```
+
+**Hypothesis:** [What might be wrong]
+
+**Research needed:**
+- [ ] [Specific question to research]
+
+---
+*Worker: [WORKER_ID] | Triggering research cycle*
+```
+
+Return: `{"status": "FAILED", "pr": null, "summary": "Failed: [reason]"}`
 
 ## Review Gate (MANDATORY)
 

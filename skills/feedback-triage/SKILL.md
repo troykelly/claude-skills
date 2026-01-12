@@ -152,11 +152,66 @@ I will investigate each item before creating issues.
 
 #### For UX/Feature Feedback
 
-Investigate: Current behavior → Requested change → Scope (files, complexity) → Design options → Classify (Type + Priority)
+```markdown
+## Investigation: [Item Title]
+
+### 1. Current Behavior
+- What exists now: [description]
+- Where it appears: [URLs/screens]
+- Current implementation: [code locations]
+
+### 2. Requested Change
+- What's being asked for: [description]
+- User impact: [how this affects users]
+- Business context: [why this matters]
+
+### 3. Scope Analysis
+- Files affected: [list]
+- Complexity: [Low/Medium/High]
+- Dependencies: [other features/systems]
+
+### 4. Design Considerations
+- Options identified:
+  1. [Option A] - [pros/cons]
+  2. [Option B] - [pros/cons]
+- Recommendation: [if clear]
+- Needs: [Design input / Product decision / Research]
+
+### 5. Classification
+- Type: Feature / Research / UX Enhancement
+- Priority: [Critical/High/Medium/Low]
+```
 
 #### For Production Incidents
 
-Investigate: Incident details (when, frequency, env) → Error analysis (logs, trace) → Impact (users, revenue) → Root cause → Classify (usually Bug, Critical/High)
+```markdown
+## Investigation: [Item Title]
+
+### 1. Incident Details
+- First reported: [timestamp]
+- Frequency: [One-time/Intermittent/Constant]
+- Environment: [Production/Staging/etc.]
+
+### 2. Error Analysis
+- Error logs: [key log entries]
+- Stack trace: [if available]
+- Affected service: [component/service name]
+
+### 3. Impact Assessment
+- Users affected: [count/percentage]
+- Revenue impact: [if applicable]
+- SLA implications: [if applicable]
+
+### 4. Root Cause Analysis
+- Hypothesis: [likely cause]
+- Evidence: [supporting data]
+- Related changes: [recent deployments/changes]
+
+### 5. Classification
+- Type: Bug
+- Severity: Critical / High
+- Priority: Critical / High
+```
 
 ### Investigation Checklist
 

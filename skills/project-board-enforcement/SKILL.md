@@ -290,7 +290,35 @@ These are the points in workflows where project board verification is MANDATORY:
 
 ## Transition Rules
 
-**Valid transitions:** Backlog → Ready → In Progress → In Review → Done. Any state can → Blocked. Blocked can return to Backlog/Ready/In Progress.
+**Valid transitions:**
+```
+Backlog → Ready → In Progress → In Review → Done
+   ↓        ↓          ↓            ↓
+   └────────┴──────────┴────────────┴──→ Blocked
+                                            ↓
+                                    (return to previous)
+```
+
+### Transition Enforcement
+
+```bash
+validate_transition() {
+  local current=$1
+  local target=$2
+
+  case "$current→$target" in
+    "Backlog→Ready"|"Ready→In Progress"|"In Progress→In Review"|"In Review→Done")
+      return 0 ;;
+    *"→Blocked")
+      return 0 ;;
+    "Blocked→Backlog"|"Blocked→Ready"|"Blocked→In Progress")
+      return 0 ;;
+    *)
+      echo "INVALID_TRANSITION: $current → $target"
+      return 1 ;;
+  esac
+}
+```
 
 ## Labels vs Project Board
 

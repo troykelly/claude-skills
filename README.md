@@ -1,6 +1,6 @@
 # Issue-Driven Development
 
-[![Version](https://img.shields.io/badge/version-1.10.0-blue.svg)](https://github.com/troykelly/claude-skills)
+[![Version](https://img.shields.io/badge/version-1.10.1-blue.svg)](https://github.com/troykelly/claude-skills)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Skills](https://img.shields.io/badge/skills-52-purple.svg)](#skills-reference)
 [![Agents](https://img.shields.io/badge/agents-9-orange.svg)](#agents)

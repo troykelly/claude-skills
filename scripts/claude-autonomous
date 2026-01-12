@@ -2,7 +2,7 @@
 #
 # claude-autonomous - Start autonomous issue-driven development with Claude
 #
-# Version: 1.10.0 (issue-driven-development plugin)
+# Version: 1.10.1 (issue-driven-development plugin)
 #
 # Usage:
 #   claude-autonomous [OPTIONS]

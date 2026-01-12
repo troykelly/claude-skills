@@ -2,7 +2,7 @@
 #
 # claude-account - Manage multiple Claude Code accounts via .env
 #
-# Version: 1.10.0 (issue-driven-development plugin)
+# Version: 1.10.1 (issue-driven-development plugin)
 #
 # Usage:
 #   claude-account <command> [options]

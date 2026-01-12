@@ -397,32 +397,11 @@ At minimum, update the issue:
 
 ### Project Board Query (NOT Labels)
 
-**CRITICAL:** Use cached project data for state queries, NOT labels and NOT repeated API calls.
-
-```bash
-# WRONG - do not use labels for state
-gh issue list --label "status:in-progress"
-
-# WRONG - do not make repeated API calls
-gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.items[] | select(.status.name == "In Progress")'
-
-# RIGHT - use cached data (0 API calls)
-echo "$GH_CACHE_ITEMS" | jq -r '.items[] | select(.status.name == "In Progress")'
-```
-
-**Skill:** `github-api-cache`, `issue-lifecycle`, `project-status-sync`, `project-board-enforcement`
+Use cached project data (`GH_CACHE_ITEMS`) for state queries. Never use labels for state. See `project-board-enforcement` skill.
 
 ## Error Handling
 
-If any step fails unexpectedly:
-
-1. Assess severity using `error-recovery`
-2. Preserve evidence (logs, errors)
-3. Attempt recovery if possible
-4. If unrecoverable, update issue as Blocked and report
-
-**Skill:** `error-recovery`
+On failure: Assess severity → Preserve evidence → Attempt recovery → If unrecoverable, set status to Blocked. See `error-recovery` skill.
 
 ## Completion Criteria
 
@@ -462,37 +441,10 @@ Work is complete when:
 
 ## Enforcement
 
-This process is enforced by:
+Hooks enforce:
+- **PR creation** blocked without review artifact
+- **PR merge** blocked without green CI
+- **Stop** blocked if review incomplete
+- **Project board** status must match work state
 
-### Review Enforcement
-- **PreToolUse hook** on `gh pr create` - Blocks without review artifact
-- **PreToolUse hook** on `gh pr merge` - Verifies CI and review
-- **Stop hook** - Verifies review completion before session end
-- **Conditional rules** - Security-sensitive files trigger security review requirement
-
-### Project Board Enforcement
-- **PreToolUse hook** on `git checkout -b` - Verifies issue is in project board
-- **PreToolUse hook** on `git checkout -b` - Updates Status → In Progress
-- **PreToolUse hook** on `gh pr create` - Updates Status → In Review
-- **Stop hook** - Verifies project board status matches work state
-
-### Project Board Gate Failures
-
-If project board verification fails:
-
-```markdown
-## BLOCKED: Project Board Compliance Failed
-
-**Issue:** #[NUMBER]
-**Problem:** [Issue not in project / Status not set / Update failed]
-
-**Required Action:**
-1. Add issue to project board
-2. Set required fields (Status, Type, Priority)
-3. Retry the blocked action
-
-**Command to add:**
-gh project item-add $GITHUB_PROJECT_NUM --owner $GH_PROJECT_OWNER --url [ISSUE_URL]
-```
-
-Do NOT proceed past a project board gate failure. Fix it first.
+Gate failures require fixing before proceeding. See `project-board-enforcement` skill.

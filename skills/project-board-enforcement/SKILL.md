@@ -290,129 +290,38 @@ These are the points in workflows where project board verification is MANDATORY:
 
 ## Transition Rules
 
-### Valid Status Transitions
-
-```
-Backlog ──► Ready ──► In Progress ──► In Review ──► Done
-    │         │            │              │
-    │         │            │              │
-    └─────────┴────────────┴──────────────┴──► Blocked
-                                               │
-                                               ▼
-                                        (any previous state)
-```
-
-### Transition Enforcement
-
-```bash
-validate_transition() {
-  local current=$1
-  local target=$2
-
-  case "$current→$target" in
-    "Backlog→Ready"|"Ready→In Progress"|"In Progress→In Review"|"In Review→Done")
-      return 0 ;;
-    *"→Blocked")
-      return 0 ;;
-    "Blocked→Backlog"|"Blocked→Ready"|"Blocked→In Progress")
-      return 0 ;;
-    *)
-      echo "Invalid transition: $current → $target"
-      return 1 ;;
-  esac
-}
-```
+**Valid transitions:** Backlog → Ready → In Progress → In Review → Done. Any state can → Blocked. Blocked can return to Backlog/Ready/In Progress.
 
 ## Labels vs Project Board
 
-### WRONG - Do Not Use Labels for State
+**WRONG:** Using labels for state (`status:in-progress`)
+**RIGHT:** Using project board Status field
 
-```bash
-# WRONG - labels are NOT the source of truth
-gh issue list --label "status:pending"
-gh issue edit 123 --add-label "status:in-progress"
-```
-
-### RIGHT - Use Project Board
-
-```bash
-# RIGHT - project board IS the source of truth
-get_issues_by_status "Ready"
-set_project_status "$ITEM_ID" "In Progress"
-```
-
-### When Labels Are Acceptable
-
-Labels are still used for:
-- `epic` - Identifying epic issues (supplementary)
-- `epic-[name]` - Grouping issues in an epic (supplementary)
-- `spawned-from:#N` - Lineage tracking (supplementary)
-- `review-finding` - Origin tracking (supplementary)
-
-But **state** (Ready, In Progress, Blocked, etc.) lives in the project board.
+Labels are only for supplementary info: `epic`, `epic-[name]`, `spawned-from:#N`, `review-finding`
 
 ## Sync Verification
 
-Run periodically to detect drift. **0 API calls (uses cache).**
+Detect drift by comparing git branches to project board status:
+- Issues with branches should be In Progress or In Review
+- In Progress issues should have active branches
+
+Use cached data (`GH_CACHE_ITEMS`) for 0 API calls. Example:
 
 ```bash
-verify_project_sync() {
-  echo "## Project Board Sync Check"
-  echo ""
-
-  # Check for issues with branches but Status != In Progress (0 API calls)
-  echo "### Issues with branches but not 'In Progress':"
-  for branch in $(git branch -r | grep -E 'feature/[0-9]+' | sed 's/.*feature\///' | cut -d- -f1); do
-    # Use cached data instead of API call
-    status=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == $branch) | .status.name")
-
-    if [ "$status" != "In Progress" ] && [ "$status" != "In Review" ]; then
-      echo "- #$branch: Status='$status' but has active branch"
-    fi
-  done
-
-  # Check for In Progress issues with no recent activity (0 API calls)
-  echo ""
-  echo "### 'In Progress' issues with no recent commits:"
-  for issue in $(get_issues_by_status "In Progress"); do
-    branch=$(git branch -r | grep -E "feature/$issue-" | head -1)
-    if [ -z "$branch" ]; then
-      echo "- #$issue: In Progress but no branch exists"
-    fi
-  done
-}
+# Check if branch status matches project board
+status=$(echo "$GH_CACHE_ITEMS" | jq -r ".items[] | select(.content.number == $issue) | .status.name")
 ```
 
 ## Error Messages
 
-All project board errors should be clear and actionable:
+All project board errors provide actionable fixes:
 
-```bash
-project_error() {
-  local code=$1
-  local context=$2
-
-  case "$code" in
-    "NOT_IN_PROJECT")
-      echo "BLOCKED: Issue $context is not in the project board."
-      echo "Fix: gh project item-add $GITHUB_PROJECT_NUM --owner $GH_PROJECT_OWNER --url \$(gh issue view $context --json url -q .url)"
-      ;;
-    "NO_STATUS")
-      echo "BLOCKED: Issue $context has no Status field set."
-      echo "Fix: Update the issue's Status field in the project board."
-      ;;
-    "INVALID_TRANSITION")
-      echo "BLOCKED: Cannot transition $context - invalid state change."
-      ;;
-    "PROJECT_NOT_FOUND")
-      echo "BLOCKED: Project $GITHUB_PROJECT_NUM not found or not accessible."
-      echo "Fix: Verify GITHUB_PROJECT_NUM and GH_PROJECT_OWNER are correct."
-      ;;
-  esac
-
-  return 1
-}
-```
+| Error Code | Message | Fix |
+|------------|---------|-----|
+| NOT_IN_PROJECT | Issue not in project board | `gh project item-add ...` |
+| NO_STATUS | Status field not set | Update Status field |
+| INVALID_TRANSITION | Invalid state change | Use valid transition |
+| PROJECT_NOT_FOUND | Project not accessible | Verify GITHUB_PROJECT_NUM |
 
 ## Integration
 

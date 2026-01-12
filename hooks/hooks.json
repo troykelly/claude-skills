@@ -4,16 +4,8 @@
       {
         "matcher": "*",
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
-            "timeout": 60
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-orchestration-sleep.sh",
-            "timeout": 30
-          }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh", "timeout": 60 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-orchestration-sleep.sh", "timeout": 30 }
         ]
       }
     ],
@@ -21,44 +13,22 @@
       {
         "matcher": "Bash",
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-creation.sh",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-local-testing.sh",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-merge.sh",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-tests-pass.sh",
-            "timeout": 10
-          }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-creation.sh", "timeout": 30 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-local-testing.sh", "timeout": 30 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-pr-merge.sh", "timeout": 30 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-tests-pass.sh", "timeout": 10 }
         ]
       },
       {
         "matcher": "mcp__github__create_pull_request",
         "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before creating a PR, verify:\n\n1. **Local tests pass**: Have you run the test suite locally and confirmed all tests pass?\n2. **Review completed**: Has the comprehensive-review skill been run and findings addressed?\n3. **Documentation updated**: If API or features changed, has documentation been updated?\n\nIf any of these are incomplete, complete them first before creating the PR."
-          }
+          { "type": "prompt", "prompt": "PR checklist: tests pass locally, review completed, docs updated if needed." }
         ]
       },
       {
         "matcher": "mcp__github__merge_pull_request",
         "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before merging this PR, verify:\n\n1. **CI is green**: All CI checks must be passing. Check with `gh pr checks [PR_NUMBER]`.\n2. **Review approved**: PR must have an approval or be self-reviewed with comprehensive-review.\n3. **No blocking comments**: All review comments must be resolved.\n\nDo NOT merge if any of these conditions are not met."
-          }
+          { "type": "prompt", "prompt": "Merge checklist: CI green (`gh pr checks`), approved/reviewed, no blocking comments." }
         ]
       }
     ],
@@ -66,60 +36,30 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/security-scan.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-generated-artifacts.sh",
-            "timeout": 15
-          }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/security-scan.sh", "timeout": 10 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/validate-generated-artifacts.sh", "timeout": 15 }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/track-test-results.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-pr-creation.sh",
-            "timeout": 10
-          }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/track-test-results.sh", "timeout": 5 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-pr-creation.sh", "timeout": 10 }
         ]
       },
       {
         "matcher": "mcp__github__create_pull_request",
         "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "**PR CREATED - MANDATORY NEXT STEPS:**\n\nYou just created a PR. Your work is NOT complete. You MUST now:\n\n1. **Monitor CI** - Run `gh pr checks [PR_NUMBER] --watch` and wait for completion\n2. **If CI fails** - Fix the failures, push, and monitor again\n3. **If CI passes** - Merge immediately with `gh pr merge [PR_NUMBER] --squash --delete-branch`\n4. **Continue working** - Pick up the next issue in scope\n\n**DO NOT:**\n- Stop and give a summary\n- Wait for user confirmation\n- Report 'PR created, ready for review'\n\n**The workflow is: Create PR → Monitor CI → Merge → Next Issue → Repeat**\n\nProceed with CI monitoring NOW."
-          }
+          { "type": "prompt", "prompt": "PR created. Next: `gh pr checks [PR] --watch` → fix or merge → next issue. Do not stop." }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/plan-limit-account-switch.sh",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-ci-before-stop.sh",
-            "timeout": 30
-          },
-          {
-            "type": "prompt",
-            "prompt": "Before stopping, verify ALL of the following:\n\n1. **CI Status**: If any PRs were created in this session, check their CI status using `gh pr checks [PR_NUMBER]`. If CI is still running or has failures, you should NOT stop until CI is green or failures are documented.\n\n2. **Review Artifact**: If source code was modified, was comprehensive-review completed and artifact posted to the issue? Check the issue for a comment containing `<!-- REVIEW:START -->`.\n\n3. **Unaddressed Findings**: Are there any unaddressed review findings? The review artifact should show `Unaddressed: 0`.\n\n4. **PR-Issue Link**: If a PR was created, does the issue have a COMPLETE review artifact?\n\nIf CI is incomplete, respond: 'CI is still running for PR #X. I should wait for CI to complete before stopping.'\n\nIf any review requirements are incomplete, inform the user what needs to be done before stopping."
-          }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/plan-limit-account-switch.sh", "timeout": 15 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-ci-before-stop.sh", "timeout": 30 },
+          { "type": "prompt", "prompt": "Stop checklist: CI complete for session PRs, review artifact posted, no unaddressed findings." }
         ]
       }
     ]

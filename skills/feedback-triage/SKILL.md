@@ -45,44 +45,7 @@ Use this skill when you receive:
 
 ## The Triage Protocol
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      FEEDBACK RECEIVED                               │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│               STEP 0: PROJECT BOARD READINESS (GATE)                │
-│  Verify GITHUB_PROJECT_NUM and GH_PROJECT_OWNER are set             │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    STEP 1: PARSE INTO ITEMS                         │
-│  Identify distinct feedback items                                   │
-│  Create TodoWrite entry for each item                               │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │
-                                  ▼
-            ┌─────────────────────────────────────────┐
-            │         FOR EACH FEEDBACK ITEM          │
-            └─────────────────────┬───────────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        ▼                         ▼                         ▼
-  ┌───────────┐           ┌─────────────┐           ┌─────────────┐
-  │INVESTIGATE│           │  CLASSIFY   │           │   CREATE    │
-  │           │──────────▶│             │──────────▶│   ISSUE     │
-  │ Research  │           │ Type+Priority│          │ Best Practice│
-  └───────────┘           └─────────────┘           └──────┬──────┘
-                                                          │
-                                                          ▼
-                                                   ┌─────────────┐
-                                                   │ ADD TO      │
-                                                   │ PROJECT     │
-                                                   │ BOARD       │
-                                                   └─────────────┘
-```
+**Flow:** Verify project board → Parse items → For each: Investigate → Classify → Create issue → Add to project board
 
 ## Step 0: Project Board Readiness (GATE)
 
@@ -189,66 +152,11 @@ I will investigate each item before creating issues.
 
 #### For UX/Feature Feedback
 
-```markdown
-## Investigation: [Item Title]
-
-### 1. Current Behavior
-- What exists now: [description]
-- Where it appears: [URLs/screens]
-- Current implementation: [code locations]
-
-### 2. Requested Change
-- What's being asked for: [description]
-- User impact: [how this affects users]
-- Business context: [why this matters]
-
-### 3. Scope Analysis
-- Files affected: [list]
-- Complexity: [Low/Medium/High]
-- Dependencies: [other features/systems]
-
-### 4. Design Considerations
-- Options identified:
-  1. [Option A] - [pros/cons]
-  2. [Option B] - [pros/cons]
-- Recommendation: [if clear]
-- Needs: [Design input / Product decision / Research]
-
-### 5. Classification
-- Type: Feature / Research / UX Enhancement
-- Priority: [Critical/High/Medium/Low]
-```
+Investigate: Current behavior → Requested change → Scope (files, complexity) → Design options → Classify (Type + Priority)
 
 #### For Production Incidents
 
-```markdown
-## Investigation: [Item Title]
-
-### 1. Incident Details
-- First reported: [timestamp]
-- Frequency: [One-time/Intermittent/Constant]
-- Environment: [Production/Staging/etc.]
-
-### 2. Error Analysis
-- Error logs: [key log entries]
-- Stack trace: [if available]
-- Affected service: [component/service name]
-
-### 3. Impact Assessment
-- Users affected: [count/percentage]
-- Revenue impact: [if applicable]
-- SLA implications: [if applicable]
-
-### 4. Root Cause Analysis
-- Hypothesis: [likely cause]
-- Evidence: [supporting data]
-- Related changes: [recent deployments/changes]
-
-### 5. Classification
-- Type: Bug
-- Severity: Critical / High
-- Priority: Critical / High
-```
+Investigate: Incident details (when, frequency, env) → Error analysis (logs, trace) → Impact (users, revenue) → Root cause → Classify (usually Bug, Critical/High)
 
 ### Investigation Checklist
 
@@ -298,174 +206,15 @@ A high-severity bug on a deprecated feature may be low priority.
 
 ## Step 4: Create Well-Formed Issues
 
-### Issue Template: Bug
+### Issue Templates
 
-```bash
-gh issue create \
-  --title "[Bug] [Concise description of the problem]" \
-  --body "## Summary
+**Bug:** `[Bug] <description>` - Include: Summary, Environment, Steps to Reproduce, Expected/Actual Behavior, Error Details, Investigation Findings (files, cause, impact), Acceptance Criteria, Source.
 
-[One-sentence description of the bug]
+**Feature:** `[Feature] <description>` - Include: Summary, Background, Current/Proposed Behavior, User Story, Scope Analysis (files, complexity), Acceptance Criteria, Out of Scope.
 
-## Environment
+**Research:** `[Research] <topic>` - Include: Summary, Background, Questions to Answer, Scope, Time Box, Deliverables, Acceptance Criteria.
 
-- **URL:** [affected URL]
-- **Environment:** [Production/Staging/Local]
-- **Browser/Client:** [if relevant]
-
-## Steps to Reproduce
-
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
-
-## Expected Behavior
-
-[What should happen]
-
-## Actual Behavior
-
-[What actually happens]
-
-## Error Details
-
-\`\`\`
-[Error message, status code, or log output]
-\`\`\`
-
-## Investigation Findings
-
-### Code Analysis
-- **Affected files:** [list of files]
-- **Likely cause:** [hypothesis]
-- **Related code:** [functions/modules]
-
-### Impact
-- **Users affected:** [scope]
-- **Functionality blocked:** [what can't users do]
-- **Workaround:** [if any]
-
-## Acceptance Criteria
-
-- [ ] Error no longer occurs
-- [ ] [Specific behavior restored]
-- [ ] Tests added to prevent regression
-
-## Technical Notes
-
-[Any additional technical context from investigation]
-
----
-**Source:** UAT Feedback / User Report / Support Ticket
-**Reported:** [DATE]"
-```
-
-### Issue Template: Feature / UX Enhancement
-
-```bash
-gh issue create \
-  --title "[Feature] [Clear description of the feature]" \
-  --body "## Summary
-
-[One-sentence description of what this feature does]
-
-## Background
-
-[Why this is needed - user feedback, business requirement, etc.]
-
-## Current Behavior
-
-[What exists today, if anything]
-
-## Proposed Behavior
-
-[What should happen after implementation]
-
-## User Story
-
-As a [type of user], I want [goal] so that [benefit].
-
-## Investigation Findings
-
-### Scope Analysis
-- **Files affected:** [list]
-- **Complexity:** [Low/Medium/High]
-- **Dependencies:** [related features/systems]
-
-### Design Considerations
-[Options considered, recommendations, questions]
-
-## Acceptance Criteria
-
-- [ ] [Specific, verifiable criterion 1]
-- [ ] [Specific, verifiable criterion 2]
-- [ ] [Specific, verifiable criterion 3]
-
-## Out of Scope
-
-- [What this issue will NOT address]
-
-## Technical Notes
-
-[Implementation hints, patterns to follow, etc.]
-
----
-**Source:** UAT Feedback / User Request / Stakeholder Input
-**Requested:** [DATE]"
-```
-
-### Issue Template: Research / Spike
-
-```bash
-gh issue create \
-  --title "[Research] [What needs to be understood]" \
-  --body "## Summary
-
-[One-sentence description of what needs to be researched]
-
-## Background
-
-[Why this research is needed]
-
-## Questions to Answer
-
-1. [Question 1]
-2. [Question 2]
-3. [Question 3]
-
-## Investigation Context
-
-[What was discovered during initial triage that prompted this research]
-
-## Scope
-
-### In Scope
-- [Topic 1]
-- [Topic 2]
-
-### Out of Scope
-- [Not covering X]
-
-## Deliverables
-
-- [ ] Document with findings
-- [ ] Recommendations for next steps
-- [ ] [Specific output, e.g., design options, architecture diagram]
-
-## Time Box
-
-[Suggested time limit: e.g., 4 hours, 1 day]
-
-## Acceptance Criteria
-
-- [ ] All questions answered with evidence
-- [ ] Recommendations documented
-- [ ] Next steps identified (issues to create)
-
----
-**Source:** UAT Feedback / Triage Investigation
-**Created:** [DATE]"
-```
+Use `gh issue create --title "[Type] ..." --body "..."` with appropriate sections from above.
 
 ---
 
@@ -473,52 +222,11 @@ gh issue create \
 
 **Every issue MUST be added to the project board with correct fields.**
 
-```bash
-# After creating issue, add to project
-ISSUE_URL=$(gh issue view [ISSUE_NUMBER] --json url -q '.url')
-gh project item-add "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" --url "$ISSUE_URL"
-
-# Get item ID
-ITEM_ID=$(gh project item-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".items[] | select(.content.number == [ISSUE_NUMBER]) | .id")
-
-# Get field IDs
-PROJECT_ID=$(gh project list --owner "$GH_PROJECT_OWNER" --format json | \
-  jq -r ".projects[] | select(.number == $GITHUB_PROJECT_NUM) | .id")
-
-STATUS_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .id')
-
-TYPE_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Type") | .id')
-
-PRIORITY_FIELD_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Priority") | .id')
-
-# Set Status = Ready (or Backlog for lower priority)
-READY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id')
-
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
-
-# Set Type (Bug, Feature, Research, etc.)
-TYPE_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".fields[] | select(.name == \"Type\") | .options[] | select(.name == \"[TYPE]\") | .id")
-
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$TYPE_FIELD_ID" --single-select-option-id "$TYPE_OPTION_ID"
-
-# Set Priority
-PRIORITY_OPTION_ID=$(gh project field-list "$GITHUB_PROJECT_NUM" --owner "$GH_PROJECT_OWNER" \
-  --format json | jq -r ".fields[] | select(.name == \"Priority\") | .options[] | select(.name == \"[PRIORITY]\") | .id")
-
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$PRIORITY_FIELD_ID" --single-select-option-id "$PRIORITY_OPTION_ID"
-
-# Verify
-echo "Issue #[ISSUE_NUMBER] added to project with Status=Ready, Type=[TYPE], Priority=[PRIORITY]"
-```
+Use `project-board-enforcement` skill functions:
+1. `add_issue_to_project` - Add issue to project
+2. `set_project_status` - Set Status (Ready/Backlog)
+3. `set_project_type` - Set Type (Bug/Feature/Research)
+4. Set Priority field
 
 **Skill:** `project-board-enforcement`
 
@@ -555,138 +263,13 @@ All issues added to project board with correct fields.
 
 ---
 
-## Example: Processing UAT Feedback
+## Best Practices
 
-### Input Received
+**Title formats:** `[Bug] <what's broken>`, `[Feature] <what it does>`, `[Research] <what to investigate>`, `[Spike] <technical question>`
 
-```markdown
-We have some bugs to resolve from UAT.
+**Good acceptance criteria:** Specific, verifiable, behavior-focused, testable checkboxes.
 
-## Family Page has error
-`https://stage.kin.life/family`
-Displays: Something went wrong on our end.
-[curl command and error response]
-
-## Family Page refers to "Children" - not Care Recipients
-Need better terminology, research required.
-
-## Family Page unable to add care recipient
-[curl command and error response]
-```
-
-### Triage Process
-
-**Step 1: Parse into items**
-- Item 1: Family page 500 error on load
-- Item 2: Terminology issue (Children vs Care Recipients)
-- Item 3: Cannot add care recipient (500 error)
-
-**Step 2: Investigate each**
-
-*Item 1 Investigation:*
-- API endpoint: `/api/v1/children?limit=50`
-- Error: `INTERNAL_ERROR`
-- Code review: Check children service, database queries
-- Impact: Users cannot view family page at all
-
-*Item 2 Investigation:*
-- Current: Hardcoded "Children" but button says "care recipient"
-- Request: More inclusive language for diverse care relationships
-- Scope: UI changes, possibly data model changes
-- Needs: UX research, product decision
-
-*Item 3 Investigation:*
-- API endpoint: `POST /api/v1/children`
-- Payload: Valid care recipient data
-- Error: `INTERNAL_ERROR`
-- Code review: Check creation endpoint, validation, database writes
-- Impact: Users cannot add any care recipients
-
-**Step 3: Classify**
-
-| Item | Type | Priority | Reasoning |
-|------|------|----------|-----------|
-| 1 | Bug | High | Core functionality broken |
-| 2 | Research | Medium | UX improvement, not blocking |
-| 3 | Bug | High | Core functionality broken |
-
-**Step 4: Create issues** (using templates above)
-
-**Step 5: Add to project board** (with Type, Priority, Status)
-
-**Step 6: Summary report** (as shown above)
-
----
-
-## Best Practices for Issue Quality
-
-### Title Conventions
-
-| Type | Format | Example |
-|------|--------|---------|
-| Bug | `[Bug] <What is broken>` | `[Bug] Family page returns 500 error` |
-| Feature | `[Feature] <What it does>` | `[Feature] Add person to Kin Circle` |
-| Research | `[Research] <What to investigate>` | `[Research] Inclusive terminology for care relationships` |
-| Spike | `[Spike] <Technical question>` | `[Spike] Evaluate API caching strategies` |
-
-### Acceptance Criteria Quality
-
-**Good criteria are:**
-- Specific and verifiable
-- Written as checkboxes
-- Focused on behavior, not implementation
-- Testable
-
-**Bad:**
-- [ ] Fix the bug
-- [ ] Make it work
-
-**Good:**
-- [ ] GET `/api/v1/children` returns 200 with valid data
-- [ ] Family page displays list of care recipients
-- [ ] Error state shows user-friendly message with retry option
-
-### Investigation Documentation
-
-Always document:
-- What you found
-- Where you looked
-- What the likely cause is
-- What the impact is
-
-This saves time when implementation begins.
-
----
-
-## Handling Unclear Feedback
-
-### When Feedback is Vague
-
-If feedback lacks detail:
-
-1. **Ask clarifying questions** before creating issue
-2. **Create Research issue** to gather more information
-3. **Document what IS known** in the issue
-
-### Clarification Template
-
-```markdown
-Before I create issues for this feedback, I need clarification:
-
-1. **[Item 1]:** [Question about scope/expected behavior/reproduction]
-2. **[Item 2]:** [Question about priority/business context]
-
-Once clarified, I'll complete the investigation and create properly-formed issues.
-```
-
-### When to Create Research Issues
-
-Create a Research issue instead of Bug/Feature when:
-- Requirements are unclear
-- Multiple solutions exist
-- Design decisions needed
-- User research required
-- Technical feasibility unknown
+**If feedback is vague:** Ask clarifying questions OR create Research issue. Document what IS known.
 
 ---
 

@@ -211,42 +211,7 @@ The operation does NOT pause for:
 
 **CRITICAL:** Before spawning ANY new workers, resolve all existing open PRs first.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    BOOTSTRAP PHASE                        │
-│             (Runs ONCE before main loop)                  │
-└─────────────────────────┬────────────────────────────────┘
-                          │
-                          ▼
-               ┌───────────────────┐
-               │ GET OPEN PRs      │
-               │                   │
-               │ Filter out:       │
-               │ - release/*       │
-               │ - release-        │
-               │   placeholder     │
-               └─────────┬─────────┘
-                         │
-              ┌──────────┴──────────┐
-              ▼                     ▼
-        ┌───────────┐         ┌───────────┐
-        │ Has PRs?  │─── No ──│ → MAIN    │
-        │           │         │   LOOP    │
-        └─────┬─────┘         └───────────┘
-              │ Yes
-              ▼
-        ┌───────────────────────────────┐
-        │ FOR EACH PR:                  │
-        │                               │
-        │ 1. Check CI status            │
-        │ 2. Verify review artifact     │
-        │ 3. Merge if ready OR          │
-        │ 4. Wait/fix if not            │
-        └───────────────────────────────┘
-                          │
-                          ▼
-                    MAIN LOOP
-```
+**Bootstrap Flow:** Get open PRs (exclude release/*, release-placeholder, do-not-merge) → For each: Check CI → Verify review → Merge if ready → Then start main loop
 
 ### Bootstrap Implementation
 
@@ -336,32 +301,7 @@ PRs are excluded from bootstrap resolution if:
 
 ## Orchestration Loop
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                       MAIN LOOP                          │
-└─────────────────────────┬────────────────────────────────┘
-                          │
-      ┌───────────────────┼───────────────────┐
-      ▼                   ▼                   ▼
-┌───────────┐      ┌───────────┐      ┌───────────┐
-│ MONITOR   │      │ CHECK     │      │ SPAWN     │
-│ WORKERS   │      │ CI/PRs    │      │ WORKERS   │
-│ (TaskOut) │      │           │      │ (Task)    │
-└─────┬─────┘      └─────┬─────┘      └─────┬─────┘
-      │                  │                  │
-      └──────────────────┼──────────────────┘
-                         │
-                         ▼
-               ┌───────────────────┐
-               │ EVALUATE STATE    │
-               │                   │
-               │ All done? → Exit  │
-               │ Waiting? → SLEEP  │
-               │ Work? → Continue  │
-               └───────────────────┘
-```
-
-**See:** `reference/loop-implementation.md` for full loop code.
+**Main Loop Flow:** Monitor workers (TaskOutput) + Check CI/PRs + Spawn workers (Task) → Evaluate state (complete/sleep/continue)
 
 ### Loop Steps
 

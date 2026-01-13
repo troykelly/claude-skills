@@ -2,7 +2,7 @@
 #
 # claude-account - Manage multiple Claude Code accounts via .env
 #
-# Version: 1.10.2 (issue-driven-development plugin)
+# Version: 1.10.3 (issue-driven-development plugin)
 #
 # Usage:
 #   claude-account <command> [options]
@@ -45,7 +45,7 @@
 set -euo pipefail
 
 # Version - keep in sync with plugin.json
-VERSION="1.8.1"
+VERSION="1.10.3"
 
 # Colors
 RED='\033[0;31m'
